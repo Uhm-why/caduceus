@@ -61,6 +61,18 @@ func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	return nil
 }
 
+func (s *Session) writeFrame(data []byte) error {
+	frame := append(data, '\n')
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	s.conn.SetWriteDeadline(time.Now().Add(s.config.HandshakeTimeout))
+	_, err := s.conn.Write(frame)
+
+	return err
+}
+
 func (s *Session) SendRequest(ctx context.Context, method string, params []byte) ([]byte, error) {
 	id := s.nextID.Add(1)
 
@@ -87,12 +99,7 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 		return nil, fmt.Errorf("marshaling json: %w", ErrMarshalling)
 	}
 
-	frame := append(payload, '\n')
-
-	s.writeMu.Lock()
-	s.conn.SetWriteDeadline(time.Now().Add(s.config.HandshakeTimeout))
-	_, err = s.conn.Write(frame)
-	s.writeMu.Unlock()
+	err = s.writeFrame(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +128,45 @@ func (s *Session) readLoop() {
 
 		rawBytes := scanner.Bytes()
 
-		_ = bytes.Clone(rawBytes)
+		msgBytes := bytes.Clone(rawBytes)
+
+		var envelope struct {
+			ID     uint64 `json:"id"`
+			Method string `json:"method"`
+		}
+
+		if err := json.Unmarshal(msgBytes, &envelope); err != nil {
+			continue
+		}
+
+		if envelope.Method == "" && envelope.ID > 0 {
+			s.pendingMu.Lock()
+			ch, ok := s.pending[envelope.ID]
+			if ok {
+				ch <- msgBytes
+				(delete(s.pending, envelope.ID))
+			}
+			s.pendingMu.Unlock()
+		}
+
+		if envelope.Method != "" {
+			if envelope.Method == "ping" && envelope.ID > 0 {
+				res := Response{
+					JSONRPC: "2.0",
+					ID:      envelope.ID,
+					Result:  json.RawMessage("\"pong\""),
+				}
+				payload, err := json.Marshal(res)
+				if err != nil {
+					continue
+				}
+				_ = s.writeFrame(payload)
+
+			}
+		}
 
 	}
+	s.Close()
 }
 
 func (s *Session) heartbeatLoop() {
