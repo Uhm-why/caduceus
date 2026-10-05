@@ -170,7 +170,21 @@ func (s *Session) readLoop() {
 }
 
 func (s *Session) heartbeatLoop() {
-	//periodic ping logic will go here
+	ticker := time.NewTicker(s.config.KeepAlive)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			_, err := s.SendRequest(s.ctx, "ping", nil)
+			if err != nil {
+				s.Close()
+				return
+			}
+		}
+	}
 }
 
 func (s *Session) Close() error {
