@@ -159,7 +159,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 			_ = json.Unmarshal(req.Params, &callParams)
 
 			if callParams.Name == "agent_peer_status" {
-				statusText := fmt.Sprintf("Session status: %s", b.session.state.String())
+				statusText := fmt.Sprintf("Session status: %s", b.session.State().String())
 
 				b.writeResponse(StdioResponse{
 					JSONRPC: "2.0",
@@ -173,7 +173,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 			}
 
 			if callParams.Name == "agent_peer_send" {
-				if b.session.state == StateIdle {
+				if b.session.State() == StateIdle {
 					conn, err := b.dialer.Dial(ctx)
 					if err != nil {
 						b.writeResponse(StdioResponse{

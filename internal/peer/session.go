@@ -37,6 +37,14 @@ func NewSession(cfg *Config) *Session {
 	}
 }
 
+func (s *Session) State() ServerState {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+
+	return s.state
+
+}
+
 func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
