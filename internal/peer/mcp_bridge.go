@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -13,6 +14,7 @@ type Bridge struct {
 	session  *Session
 	dialer   *Dialer
 	stdoutMu sync.Mutex
+	dialMu   sync.Mutex
 }
 
 func NewBridge(s *Session, d *Dialer) *Bridge {
@@ -106,6 +108,26 @@ var agentPeerStatusTool = ToolDescriptor{
 	},
 }
 
+func (b *Bridge) ensureConnected(ctx context.Context) error {
+	b.dialMu.Lock()
+	defer b.dialMu.Unlock()
+	if b.session.State() != StateIdle {
+		return nil
+	}
+
+	conn, err := b.dialer.Dial(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := b.session.Attach(ctx, conn); err != nil && !errors.Is(err, ErrSessionActive) {
+		return err
+	}
+
+	return nil
+
+}
+
 func (b *Bridge) Serve(ctx context.Context) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 10485760)
@@ -174,29 +196,14 @@ func (b *Bridge) Serve(ctx context.Context) error {
 
 			if callParams.Name == "agent_peer_send" {
 				if b.session.State() == StateIdle {
-					conn, err := b.dialer.Dial(ctx)
-					if err != nil {
+					if err := b.ensureConnected(ctx); err != nil {
 						b.writeResponse(StdioResponse{
 							JSONRPC: "2.0",
 							ID:      req.ID,
 							Result: map[string]any{
 								"isError": true,
 								"content": []map[string]any{
-									{"type": "text", "text": fmt.Sprintf("Dial Failed: %v", err)},
-								},
-							},
-						})
-						break
-					}
-
-					if err := b.session.Attach(ctx, conn); err != nil {
-						b.writeResponse(StdioResponse{
-							JSONRPC: "2.0",
-							ID:      req.ID,
-							Result: map[string]any{
-								"isError": true,
-								"content": []map[string]any{
-									{"type": "text", "text": fmt.Sprintf("Attach failed: %v", err)},
+									{"type": "text", "text": fmt.Sprintf("Connection failed: %v", err)},
 								},
 							},
 						})
