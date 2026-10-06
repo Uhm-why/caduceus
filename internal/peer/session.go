@@ -113,7 +113,10 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 	}
 
 	select {
-	case resp := <-respChan:
+	case resp, ok := <-respChan:
+		if !ok {
+			return nil, errors.New("session closed while awaiting response")
+		}
 		return resp, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
