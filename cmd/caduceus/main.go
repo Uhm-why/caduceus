@@ -95,4 +95,8 @@ func main() {
 	if err := bridge.Serve(ctx); err != nil {
 		log.Printf("MCP Bridge error: %v", err)
 	}
+
+	if cfg.ListenAddress != "" {
+		<-ctx.Done()
+	}
 }

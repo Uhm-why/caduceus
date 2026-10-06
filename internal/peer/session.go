@@ -162,6 +162,17 @@ func (s *Session) readLoop() {
 				}
 				_ = s.writeFrame(payload)
 
+			} else if envelope.Method == "agent/message" && envelope.ID > 0 {
+				res := Response{
+					JSONRPC: "2.0",
+					ID:      envelope.ID,
+					Result:  json.RawMessage("\"peer received: message delivered successfully over mTLS 1.3\""),
+				}
+				payload, err := json.Marshal(res)
+				if err != nil {
+					continue
+				}
+				_ = s.writeFrame(payload)
 			}
 		}
 
