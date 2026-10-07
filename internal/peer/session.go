@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+type InboundMessage struct {
+	Timestamp time.Time `json:"timestamp"`
+	Sender    string    `json:"sender"`
+	Content   string    `json:"content"`
+}
 type Session struct {
 	config    *Config
 	state     ServerState
@@ -24,6 +29,8 @@ type Session struct {
 	pendingMu sync.Mutex
 	pending   map[uint64]chan []byte
 	writeMu   sync.Mutex
+	inboxMu   sync.Mutex
+	inbox     []InboundMessage
 }
 
 var ErrSessionActive = errors.New("session already active")
@@ -126,6 +133,32 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 
 }
 
+func (s *Session) enqueueInbound(msg InboundMessage) {
+	s.inboxMu.Lock()
+	defer s.inboxMu.Unlock()
+
+	const maxInboxSize = 100
+	if len(s.inbox) >= maxInboxSize {
+		s.inbox = s.inbox[1:]
+	}
+
+	s.inbox = append(s.inbox, msg)
+}
+
+func (s *Session) DrainInbox() []InboundMessage {
+	s.inboxMu.Lock()
+	defer s.inboxMu.Unlock()
+
+	if len(s.inbox) == 0 {
+		return nil
+	}
+
+	messages := s.inbox
+	s.inbox = nil
+
+	return messages
+}
+
 func (s *Session) readLoop() {
 	scanner := bufio.NewScanner(s.conn)
 	scanner.Buffer(make([]byte, 4096), s.config.MaxFrameSize)
@@ -142,8 +175,9 @@ func (s *Session) readLoop() {
 		msgBytes := bytes.Clone(rawBytes)
 
 		var envelope struct {
-			ID     uint64 `json:"id"`
-			Method string `json:"method"`
+			ID     uint64          `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params,omitempty"`
 		}
 
 		if err := json.Unmarshal(msgBytes, &envelope); err != nil {
@@ -174,16 +208,27 @@ func (s *Session) readLoop() {
 				_ = s.writeFrame(payload)
 
 			} else if envelope.Method == "agent/message" && envelope.ID > 0 {
+				var inbound struct {
+					Message string `json:"message"`
+				}
+				_ = json.Unmarshal(envelope.Params, &inbound)
+
+				sender := s.conn.RemoteAddr().String()
+				s.enqueueInbound(InboundMessage{
+					Timestamp: time.Now().UTC(),
+					Sender:    sender,
+					Content:   inbound.Message,
+				})
 				res := Response{
 					JSONRPC: "2.0",
 					ID:      envelope.ID,
 					Result:  json.RawMessage("\"peer received: message delivered successfully over mTLS 1.3\""),
 				}
-				payload, err := json.Marshal(res)
+				outPayload, err := json.Marshal(res)
 				if err != nil {
 					continue
 				}
-				_ = s.writeFrame(payload)
+				_ = s.writeFrame(outPayload)
 			}
 		}
 

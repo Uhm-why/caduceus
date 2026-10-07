@@ -108,6 +108,15 @@ var agentPeerStatusTool = ToolDescriptor{
 	},
 }
 
+var agentPeerInboxTool = ToolDescriptor{
+	Name:        "agent_peer_inbox",
+	Description: "Check inbox for messages or tasks from a peer agent",
+	InputSchema: ToolInputSchema{
+		Type:       "object",
+		Properties: map[string]PropertyDefinition{},
+	},
+}
+
 func (b *Bridge) ensureConnected(ctx context.Context) error {
 	b.dialMu.Lock()
 	defer b.dialMu.Unlock()
@@ -168,6 +177,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					"tools": []ToolDescriptor{
 						agentPeerSendTool,
 						agentPeerStatusTool,
+						agentPeerInboxTool,
 					},
 				},
 			})
@@ -231,6 +241,49 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					Result: map[string]any{
 						"content": []map[string]any{
 							{"type": "text", "text": string(res)},
+						},
+					},
+				})
+			}
+
+			if callParams.Name == "agent_peer_inbox" {
+				emptyInboxMsg := fmt.Sprintf("Inbox is empty")
+				messages := b.session.DrainInbox()
+				if len(messages) == 0 {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"content": []map[string]any{
+								{"type": "text", "text": emptyInboxMsg},
+							},
+						},
+					})
+					break
+				}
+
+				data, err := json.MarshalIndent(messages, "", "  ")
+
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error marshalling inbox: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": string(data)},
 						},
 					},
 				})
