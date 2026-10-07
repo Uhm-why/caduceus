@@ -52,8 +52,7 @@ type Config struct {
 	MaxFrameSize int
 }
 
-var ErrMissingListenAddr = errors.New("missing ListenAddress")
-var ErrMissingPeerAddr = errors.New("missing PeerAddress")
+var ErrMissingNetworkMode = errors.New("at least one of ListenAddress or PeerAddress must be configured")
 
 var ErrMissingCertPath = errors.New("missing CertPath")
 var ErrMissingKeyPath = errors.New("missing KeyPath")
@@ -67,12 +66,19 @@ var ErrInvalidTimeout = errors.New("invalid Timeout")
 var ErrInvalidMaxFrameSize = errors.New("max frame size must be greater than zero")
 
 func (c Config) Validate() error {
-	if c.ListenAddress == "" {
-		return fmt.Errorf("validation error: %w", ErrMissingListenAddr)
+	if c.ListenAddress == "" && c.PeerAddress == "" {
+		return fmt.Errorf("validation error: %w", ErrMissingNetworkMode)
 	}
 
-	if c.PeerAddress == "" {
-		return fmt.Errorf("validation error: %w", ErrMissingPeerAddr)
+	if c.PeerAddress != "" {
+		if c.PeerSAN == "" {
+			return fmt.Errorf("validation error: %w", ErrMissingPeerSAN)
+		}
+
+		if c.DialTimeout <= 0 {
+			return fmt.Errorf("validation error: %w", ErrInvalidTimeout)
+		}
+
 	}
 
 	if c.TLSCertPath == "" {
@@ -87,15 +93,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("validation error: %w", ErrMissingCAPath)
 	}
 
-	if c.PeerSAN == "" {
-		return fmt.Errorf("validation error: %w", ErrMissingPeerSAN)
-	}
-
 	if c.HandshakeTimeout <= 0 {
-		return fmt.Errorf("validation error: %w", ErrInvalidTimeout)
-	}
-
-	if c.DialTimeout <= 0 {
 		return fmt.Errorf("validation error: %w", ErrInvalidTimeout)
 	}
 

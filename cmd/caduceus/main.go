@@ -57,6 +57,10 @@ func main() {
 		MaxFrameSize:     10 * 1024 * 1024,
 	}
 
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
