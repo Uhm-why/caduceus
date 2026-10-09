@@ -5,13 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+
+	"github.com/Uhm-why/caduceus/internal/config"
 )
 
 type Dialer struct {
-	config *Config
+	config *config.Config
 }
 
-func NewDialer(cfg *Config) *Dialer {
+func NewDialer(cfg *config.Config) *Dialer {
 	return &Dialer{
 		config: cfg,
 	}
@@ -22,7 +24,7 @@ func (d *Dialer) Dial(ctx context.Context) (*tls.Conn, error) {
 
 	defer cancel()
 
-	tlsCfg, err := d.config.TLSClientConfig()
+	tlsCfg, err := TLSClientConfig(d.config)
 	if err != nil {
 		return nil, err
 	}

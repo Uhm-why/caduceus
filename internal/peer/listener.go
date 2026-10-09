@@ -6,21 +6,23 @@ import (
 	"errors"
 	"net"
 	"time"
+
+	"github.com/Uhm-why/caduceus/internal/config"
 )
 
 type Listener struct {
-	config   *Config
+	config   *config.Config
 	listener net.Listener
 }
 
-func NewListener(cfg *Config) *Listener {
+func NewListener(cfg *config.Config) *Listener {
 	return &Listener{
 		config: cfg,
 	}
 }
 
 func (l *Listener) Start(ctx context.Context) (<-chan *tls.Conn, <-chan error, error) {
-	tlsCfg, err := l.config.TLSServerConfig()
+	tlsCfg, err := TLSServerConfig(l.config)
 	if err != nil {
 		return nil, nil, err
 	}

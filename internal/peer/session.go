@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Uhm-why/caduceus/internal/config"
 )
 
 type InboundMessage struct {
@@ -19,7 +21,7 @@ type InboundMessage struct {
 	Content   string    `json:"content"`
 }
 type Session struct {
-	config    *Config
+	config    *config.Config
 	state     ServerState
 	stateMu   sync.RWMutex
 	conn      *tls.Conn
@@ -36,7 +38,7 @@ type Session struct {
 var ErrSessionActive = errors.New("session already active")
 var ErrMarshalling = errors.New("error marshaling json")
 
-func NewSession(cfg *Config) *Session {
+func NewSession(cfg *config.Config) *Session {
 	return &Session{
 		config:  cfg,
 		state:   StateIdle,
