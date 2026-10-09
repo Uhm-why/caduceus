@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -163,4 +165,96 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+func ParseAndLoad(args []string) (*Config, error) {
+	flags := flag.NewFlagSet("caduceus", flag.ContinueOnError)
+	listenFlag := flags.String("listen", "", "Address to bind for incoming peer connections (e.g. :8443).")
+	ipFlag := flags.String("ip", "", "The ip and port [0.0.0.0:0000] of the other machine running hermes to connect to.")
+	configFlag := flags.String("config", "", "The directory where your caduceus certificates are stored.")
+	sanFlag := flags.String("san", "", "Expected Subject Alternative Name (SAN)")
+	handshakeTimeoutFlag := flags.String("handshake-timeout", "", "The amount of time (in seconds) the agent will wait on a handshake before aborting.")
+	dialTimeoutFlag := flags.String("dial-timeout", "", "The amount of time the agent will spend trying to dial a peer before aborting.")
+	idleTimeoutFlag := flags.String("idle-timeout", "", "The amount of time the agent will wait with no activity before aborting.")
+	keepAliveFlag := flags.String("keepalive", "", "The set keepalive for the connection.")
+	maxFrameSizeFlag := flags.Int("max-frame-size", 0, "The maximum size of a frame to send to another agent.")
+
+	flags.Parse(args)
+
+	cfg := DefaultConfig()
+	var err error
+
+	explicit := make(map[string]bool)
+
+	flags.Visit(func(f *flag.Flag) {
+		explicit[f.Name] = true
+	})
+
+	filePath, baseDir, found := ResolveConfigFile(*configFlag)
+	if baseDir != DefaultConfigDir() {
+		cfg.TLSCertPath = filepath.Join(baseDir, "cert.pem")
+		cfg.TLSKeyPath = filepath.Join(baseDir, "key.pem")
+		cfg.CAPath = filepath.Join(baseDir, "ca.pem")
+	}
+
+	if found {
+		if err := LoadFile(filePath, cfg); err != nil {
+			return nil, err
+		}
+	} else if explicit["config"] && filepath.Ext(*configFlag) == ".json" {
+		return nil, fmt.Errorf("config file %q not found", *configFlag)
+	}
+
+	if explicit["listen"] {
+		cfg.ListenAddress = *listenFlag
+	}
+	if explicit["ip"] {
+		cfg.PeerAddress = *ipFlag
+	}
+	if explicit["san"] {
+		cfg.PeerSAN = *sanFlag
+	}
+
+	if explicit["handshake-timeout"] {
+
+		cfg.HandshakeTimeout, err = time.ParseDuration(*handshakeTimeoutFlag)
+		if err != nil {
+			return nil, fmt.Errorf("time related flags should be in the golang duration format. (e.g. `5s` for 5 seconds). Please retry the command with: %s error: %w", *handshakeTimeoutFlag, err)
+		}
+	}
+	if explicit["dial-timeout"] {
+		cfg.DialTimeout, err = time.ParseDuration(*dialTimeoutFlag)
+		if err != nil {
+			return nil, fmt.Errorf("time related flags should be in the golang duration format. (e.g. `5s` for 5 seconds). Please retry the command with: %s error: %w", *dialTimeoutFlag, err)
+		}
+	}
+	if explicit["idle-timeout"] {
+		cfg.IdleTimeout, err = time.ParseDuration(*idleTimeoutFlag)
+		if err != nil {
+			return nil, fmt.Errorf("time related flags should be in the golang duration format. (e.g. `5s` for 5 seconds). Please retry the command with: %s error: %w", *idleTimeoutFlag, err)
+		}
+	}
+	if explicit["keepalive"] {
+		cfg.KeepAlive, err = time.ParseDuration(*keepAliveFlag)
+		if err != nil {
+			return nil, fmt.Errorf("time related flags should be in the golang duration format for seconds. (e.g. `5s` for 5 seconds). Please retry the command with: %s error: %w", *keepAliveFlag, err)
+		}
+	}
+	if explicit["max-frame-size"] {
+		cfg.MaxFrameSize = *maxFrameSizeFlag
+	}
+
+	if cfg.PeerAddress != "" {
+		_, _, err := net.SplitHostPort(cfg.PeerAddress)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = cfg.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
