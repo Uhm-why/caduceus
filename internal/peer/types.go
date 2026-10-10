@@ -5,6 +5,7 @@ type ServerState int
 const (
 	StateIdle ServerState = iota
 	StateConnecting
+	StateHandshake
 	StateActive
 	StateRetrying
 	StateUnknown
@@ -13,6 +14,7 @@ const (
 var stateName = map[ServerState]string{
 	StateIdle:       "idle",
 	StateConnecting: "connecting",
+	StateHandshake:  "handshake",
 	StateActive:     "active",
 	StateRetrying:   "retrying",
 	StateUnknown:    "unknown",
