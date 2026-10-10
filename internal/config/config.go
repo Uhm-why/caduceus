@@ -179,7 +179,9 @@ func ParseAndLoad(args []string) (*Config, error) {
 	keepAliveFlag := flags.String("keepalive", "", "The set keepalive for the connection.")
 	maxFrameSizeFlag := flags.Int("max-frame-size", 0, "The maximum size of a frame to send to another agent.")
 
-	flags.Parse(args)
+	if err := flags.Parse(args); err != nil {
+		return nil, err
+	}
 
 	cfg := DefaultConfig()
 	var err error

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -14,6 +16,9 @@ import (
 func main() {
 	cfg, err := config.ParseAndLoad(os.Args[1:])
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
