@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,18 +22,21 @@ type InboundMessage struct {
 	Content   string    `json:"content"`
 }
 type Session struct {
-	config    *config.Config
-	state     ServerState
-	stateMu   sync.RWMutex
-	conn      *tls.Conn
-	ctx       context.Context
-	cancel    context.CancelFunc
-	nextID    atomic.Uint64
-	pendingMu sync.Mutex
-	pending   map[uint64]chan []byte
-	writeMu   sync.Mutex
-	inboxMu   sync.Mutex
-	inbox     []InboundMessage
+	config     *config.Config
+	state      ServerState
+	stateMu    sync.RWMutex
+	conn       *tls.Conn
+	ctx        context.Context
+	cancel     context.CancelFunc
+	nextID     atomic.Uint64
+	pendingMu  sync.Mutex
+	pending    map[uint64]chan []byte
+	writeMu    sync.Mutex
+	inboxMu    sync.Mutex
+	inbox      []InboundMessage
+	localCaps  *Capabilities
+	remoteCaps *Capabilities
+	capsMu     sync.RWMutex
 }
 
 var ErrSessionActive = errors.New("session already active")
@@ -40,9 +44,11 @@ var ErrMarshalling = errors.New("error marshaling json")
 
 func NewSession(cfg *config.Config) *Session {
 	return &Session{
-		config:  cfg,
-		state:   StateIdle,
-		pending: (make(map[uint64]chan []byte)),
+		config:     cfg,
+		state:      StateIdle,
+		pending:    (make(map[uint64]chan []byte)),
+		localCaps:  DefaultCapabilities(),
+		remoteCaps: nil,
 	}
 }
 
@@ -54,16 +60,53 @@ func (s *Session) State() ServerState {
 
 }
 
+func (s *Session) RemoteCapabilities() *Capabilities {
+	s.capsMu.RLock()
+	defer s.capsMu.RUnlock()
+
+	return s.remoteCaps
+}
+
+func (s *Session) HasRemoteFeature(feature string) bool {
+	s.capsMu.RLock()
+	defer s.capsMu.RUnlock()
+
+	if s.remoteCaps != nil && s.remoteCaps.HasFeature(feature) {
+		return true
+	}
+
+	return false
+}
+
+func (s *Session) validatePeerCapabilities(remote *Capabilities) error {
+
+	if remote == nil {
+		return fmt.Errorf("remote capabilities nil")
+	}
+
+	if remote.Version == "" {
+		return fmt.Errorf("remote version capabilities entry empty")
+	}
+	if s.localCaps.Version != remote.Version {
+		return fmt.Errorf("major version mismatch between local and remote")
+	}
+	if !remote.HasFeature("messaging") {
+		return fmt.Errorf("Remote missing messaging feature")
+	}
+
+	return nil
+}
+
 func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
-	if s.state == StateActive {
+	if s.state == StateActive || s.state == StateHandshake {
 		conn.Close()
 		return fmt.Errorf("starting session: %w", ErrSessionActive)
 	}
 
-	s.state = StateActive
+	s.state = StateHandshake
 
 	s.conn = conn
 
@@ -73,7 +116,7 @@ func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.cancel = cancel
 
 	go s.readLoop()
-	go s.heartbeatLoop()
+	//go s.heartbeatLoop()
 
 	return nil
 }
@@ -197,6 +240,81 @@ func (s *Session) readLoop() {
 		}
 
 		if envelope.Method != "" {
+			if s.State() == StateHandshake {
+				var caps Capabilities
+				if envelope.Method == "caduceus/handshake" {
+					if err := json.Unmarshal(envelope.Params, &caps); err != nil {
+						continue
+					}
+					if err := s.validatePeerCapabilities(&caps); err != nil {
+						log.Printf("error validating peer capabilities: %v", err)
+						if envelope.ID > 0 {
+							res := Response{
+								JSONRPC: "2.0",
+								ID:      envelope.ID,
+								Error: &RPCError{
+									Code:    -32602,
+									Message: err.Error(),
+								},
+							}
+							if payload, marshalErr := json.Marshal(res); marshalErr == nil {
+								_ = s.writeFrame(payload)
+							}
+						}
+
+						break
+
+					}
+
+					s.capsMu.Lock()
+					s.remoteCaps = &caps
+					s.capsMu.Unlock()
+
+					capsBytes, err := json.Marshal(s.localCaps)
+					if err != nil {
+						continue
+					}
+
+					res := Response{
+						JSONRPC: "2.0",
+						ID:      envelope.ID,
+						Result:  capsBytes,
+					}
+
+					payload, err := json.Marshal(res)
+					if err != nil {
+						continue
+					}
+
+					_ = s.writeFrame(payload)
+
+					s.stateMu.Lock()
+					s.state = StateActive
+					s.stateMu.Unlock()
+
+					go s.heartbeatLoop()
+
+				} else {
+					if envelope.ID > 0 {
+						res := Response{
+							JSONRPC: "2.0",
+							ID:      envelope.ID,
+							Error: &RPCError{
+								Code:    -32602,
+								Message: "handshake required",
+							},
+						}
+
+						payload, err := json.Marshal(res)
+						if err != nil {
+							continue
+						}
+						s.writeFrame(payload)
+					}
+				}
+				continue
+			}
+
 			if envelope.Method == "ping" && envelope.ID > 0 {
 				res := Response{
 					JSONRPC: "2.0",
