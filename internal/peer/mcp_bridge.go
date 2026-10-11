@@ -133,6 +133,14 @@ func (b *Bridge) ensureConnected(ctx context.Context) error {
 		return err
 	}
 
+	if errors.Is(err, ErrSessionActive) {
+		return nil
+	}
+
+	if err := b.session.PerformHandshake(ctx); err != nil {
+		return err
+	}
+
 	return nil
 
 }

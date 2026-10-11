@@ -97,6 +97,61 @@ func (s *Session) validatePeerCapabilities(remote *Capabilities) error {
 	return nil
 }
 
+func (s *Session) PerformHandshake(ctx context.Context) error {
+	s.stateMu.RLock()
+	var currentState = s.state
+	s.stateMu.RUnlock()
+	if currentState != StateHandshake {
+		return fmt.Errorf("session not in handshake state: %s", s.state)
+	}
+
+	localCapsBytes, err := json.Marshal(s.localCaps)
+	if err != nil {
+		return fmt.Errorf("marshalling local capabilities: %w", err)
+	}
+
+	peerResponse, err := s.SendRequest(ctx, "caduceus/handshake", localCapsBytes)
+	if err != nil {
+		s.Close()
+		return fmt.Errorf("handshake request failed: %w", err)
+	}
+
+	var unmarshaledPeerRes Response
+
+	if err := json.Unmarshal(peerResponse, &unmarshaledPeerRes); err != nil {
+		s.Close()
+		return fmt.Errorf("unmarshaling handshake response: %w", err)
+	}
+
+	if unmarshaledPeerRes.Error != nil {
+		s.Close()
+		return fmt.Errorf("peer rejected handshake: %s", unmarshaledPeerRes.Error.Message)
+	}
+
+	var remoteCaps Capabilities
+
+	if err := json.Unmarshal(unmarshaledPeerRes.Result, &remoteCaps); err != nil {
+		s.Close()
+		return fmt.Errorf("unmarshaling remote capabilities: %w", err)
+	}
+
+	if err := s.validatePeerCapabilities(&remoteCaps); err != nil {
+		s.Close()
+		return fmt.Errorf("validating remote capabilities: %w", err)
+	}
+
+	s.capsMu.Lock()
+	s.remoteCaps = &remoteCaps
+	s.capsMu.Unlock()
+
+	s.stateMu.Lock()
+	s.state = StateActive
+	s.stateMu.Unlock()
+
+	go s.heartbeatLoop()
+	return nil
+}
+
 func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
