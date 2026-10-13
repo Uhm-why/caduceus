@@ -117,6 +117,15 @@ var agentPeerInboxTool = ToolDescriptor{
 	},
 }
 
+var agentPeerCapabilitiesTool = ToolDescriptor{
+	Name:        "agent_peer_capabilities",
+	Description: "Inspect the negotiated capabilities, features, and metadata of the connected peer agent",
+	InputSchema: ToolInputSchema{
+		Type:       "object",
+		Properties: map[string]PropertyDefinition{},
+	},
+}
+
 func (b *Bridge) ensureConnected(ctx context.Context) error {
 	b.dialMu.Lock()
 	defer b.dialMu.Unlock()
@@ -186,6 +195,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						agentPeerSendTool,
 						agentPeerStatusTool,
 						agentPeerInboxTool,
+						agentPeerCapabilitiesTool,
 					},
 				},
 			})
@@ -227,6 +237,20 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						})
 						break
 					}
+				}
+
+				if !b.session.HasRemoteFeature("messaging") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Peer does not support the 'messaging' capability")},
+							},
+						},
+					})
+					break
 				}
 
 				res, err := b.session.SendRequest(ctx, "agent/message", callParams.Arguments)
@@ -295,6 +319,79 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						},
 					},
 				})
+			}
+
+			if callParams.Name == "agent_peer_capabilities" {
+				if b.session.State() == StateIdle {
+					if err := b.ensureConnected(ctx); err != nil {
+						b.writeResponse(StdioResponse{
+							JSONRPC: "2.0",
+							ID:      req.ID,
+							Result: map[string]any{
+								"isError": true,
+								"content": []map[string]any{
+									{"type": "text", "text": fmt.Sprintf("Session StateIdle and failed to connect: %v", err)},
+								},
+							},
+						})
+						break
+					}
+				}
+
+				if b.session.State() != StateActive {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Peer connection not active (current state: %s)", b.session.State().String())},
+							},
+						},
+					})
+					break
+				}
+
+				caps := b.session.RemoteCapabilities()
+
+				if caps == nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"content": []map[string]any{
+								{"type": "text", "text": string("No remote capabilities negotiated")},
+							},
+						},
+					})
+					break
+				}
+
+				data, err := json.MarshalIndent(caps, "", "  ")
+
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Marshalling capabilities: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": string(data)},
+						},
+					},
+				})
+
 			}
 
 		default:
