@@ -341,11 +341,11 @@ func (s *Session) readLoop() {
 						continue
 					}
 
-					_ = s.writeFrame(payload)
-
 					s.stateMu.Lock()
 					s.state = StateActive
 					s.stateMu.Unlock()
+
+					_ = s.writeFrame(payload)
 
 					go s.heartbeatLoop()
 
