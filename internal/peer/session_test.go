@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"math/big"
 	"net"
 	"testing"
@@ -160,4 +161,68 @@ func TestHandshake_VersionMismatch(t *testing.T) {
 		t.Fatalf("server state should not be StateActive after handshake failure")
 	}
 
+}
+
+func TestHandshake_MissingFeature(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	clientSession.localCaps.Features = []string{}
+
+	serverSession.Attach(ctx, serverConn)
+	clientSession.Attach(ctx, clientConn)
+
+	err := clientSession.PerformHandshake(ctx)
+
+	if err == nil {
+		t.Fatalf("expected handshake to fail due to missing messaging feature, but got nil")
+	}
+
+	if clientSession.State() == StateActive {
+		t.Fatalf("client state should not be StateActive after handshake failure")
+	}
+
+	if serverSession.State() == StateActive {
+		t.Fatalf("server state should not be StateActive after handshake failure")
+	}
+}
+
+func TestHandshake_PrematureRPCRejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	serverSession.Attach(ctx, serverConn)
+	clientSession.Attach(ctx, clientConn)
+
+	resBytes, err := clientSession.SendRequest(ctx, "agent/message", []byte(`{"message":"premature"}`))
+
+	if err != nil {
+		t.Fatalf("send request failed: %v", err)
+	}
+
+	res := &Response{}
+
+	if err := json.Unmarshal(resBytes, &res); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if res.Error == nil {
+		t.Fatalf("expected error response for premature RPC, got nil")
+	}
+
+	if res.Error.Code != -32602 {
+		t.Fatalf("expected error code -32602, got %d", res.Error.Code)
+	}
+
+	if res.Error.Message != "handshake required" {
+		t.Fatalf("expected error message 'handshake required', got %s", res.Error.Message)
+	}
+
+	if len(serverSession.DrainInbox()) != 0 {
+		t.Fatalf("server should not have delivered premature message to inbox")
+	}
 }
