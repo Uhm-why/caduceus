@@ -142,7 +142,7 @@ func (md *Maildir) Drain() ([]Message, error) {
 
 		err = json.Unmarshal(messageData, tmpMessage)
 		if err != nil {
-			log.Printf("error unmarshaling : %v", err)
+			log.Printf("error unmarshaling: %v", err)
 			continue
 		}
 
