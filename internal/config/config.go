@@ -52,6 +52,7 @@ type Config struct {
 	TLSKeyPath  string
 	CAPath      string
 	PeerSAN     string
+	MailboxPath string
 
 	HandshakeTimeout time.Duration
 	DialTimeout      time.Duration
@@ -69,6 +70,7 @@ type fileConfig struct {
 	TLSKeyPath  *string `json:"key_path"`
 	CAPath      *string `json:"ca_path"`
 	PeerSAN     *string `json:"peer_san"`
+	MailboxPath *string `json:"mailbox_path"`
 
 	HandshakeTimeout *Duration `json:"handshake_timeout"`
 	DialTimeout      *Duration `json:"dial_timeout"`
@@ -99,6 +101,7 @@ func DefaultConfig() *Config {
 		TLSKeyPath:  filepath.Join(baseDir, "key.pem"),
 		CAPath:      filepath.Join(baseDir, "ca.pem"),
 		PeerSAN:     "caduceus-agent",
+		MailboxPath: filepath.Join(baseDir, "mailbox"),
 
 		HandshakeTimeout: 5 * time.Second,
 		DialTimeout:      5 * time.Second,
@@ -116,6 +119,7 @@ var (
 	ErrMissingCAPath       = errors.New("missing CAPath")
 	ErrMissingPeerSAN      = errors.New("missing PeerSAN")
 	ErrInvalidPEMFormat    = errors.New("invalid PEM format")
+	ErrMissingMailboxPath  = errors.New("missing MailboxPath")
 	ErrInvalidTimeout      = errors.New("invalid Timeout")
 	ErrInvalidMaxFrameSize = errors.New("max frame size must be greater than zero")
 )
@@ -148,6 +152,10 @@ func (c Config) Validate() error {
 		return fmt.Errorf("validation error: %w", ErrMissingCAPath)
 	}
 
+	if c.MailboxPath == "" {
+		return fmt.Errorf("validation error: %w", ErrMissingMailboxPath)
+	}
+
 	if c.HandshakeTimeout <= 0 {
 		return fmt.Errorf("validation error: %w", ErrInvalidTimeout)
 	}
@@ -172,6 +180,7 @@ func ParseAndLoad(args []string) (*Config, error) {
 	listenFlag := flags.String("listen", "", "Address to bind for incoming peer connections (e.g. :8443).")
 	ipFlag := flags.String("ip", "", "The ip and port [0.0.0.0:0000] of the other machine running hermes to connect to.")
 	configFlag := flags.String("config", "", "The directory where your caduceus certificates are stored.")
+	mailboxFlag := flags.String("mailbox-path", "", "The directory where caduceus persists queued messages.")
 	sanFlag := flags.String("san", "", "Expected Subject Alternative Name (SAN)")
 	handshakeTimeoutFlag := flags.String("handshake-timeout", "", "The amount of time (in seconds) the agent will wait on a handshake before aborting.")
 	dialTimeoutFlag := flags.String("dial-timeout", "", "The amount of time the agent will spend trying to dial a peer before aborting.")
@@ -197,6 +206,7 @@ func ParseAndLoad(args []string) (*Config, error) {
 		cfg.TLSCertPath = filepath.Join(baseDir, "cert.pem")
 		cfg.TLSKeyPath = filepath.Join(baseDir, "key.pem")
 		cfg.CAPath = filepath.Join(baseDir, "ca.pem")
+		cfg.MailboxPath = filepath.Join(baseDir, "mailbox")
 	}
 
 	if found {
@@ -215,6 +225,9 @@ func ParseAndLoad(args []string) (*Config, error) {
 	}
 	if explicit["san"] {
 		cfg.PeerSAN = *sanFlag
+	}
+	if explicit["mailbox-path"] {
+		cfg.MailboxPath = *mailboxFlag
 	}
 
 	if explicit["handshake-timeout"] {
