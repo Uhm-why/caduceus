@@ -14,13 +14,9 @@ import (
 	"time"
 
 	"github.com/Uhm-why/caduceus/internal/config"
+	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
 
-type InboundMessage struct {
-	Timestamp time.Time `json:"timestamp"`
-	Sender    string    `json:"sender"`
-	Content   string    `json:"content"`
-}
 type Session struct {
 	config     *config.Config
 	state      ServerState
@@ -32,8 +28,7 @@ type Session struct {
 	pendingMu  sync.Mutex
 	pending    map[uint64]chan []byte
 	writeMu    sync.Mutex
-	inboxMu    sync.Mutex
-	inbox      []InboundMessage
+	mailbox    mailbox.Mailbox
 	localCaps  *Capabilities
 	remoteCaps *Capabilities
 	capsMu     sync.RWMutex
@@ -42,11 +37,12 @@ type Session struct {
 var ErrSessionActive = errors.New("session already active")
 var ErrMarshalling = errors.New("error marshaling json")
 
-func NewSession(cfg *config.Config) *Session {
+func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 	return &Session{
 		config:     cfg,
 		state:      StateIdle,
 		pending:    (make(map[uint64]chan []byte)),
+		mailbox:    mb,
 		localCaps:  DefaultCapabilities(),
 		remoteCaps: nil,
 	}
@@ -233,30 +229,8 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 
 }
 
-func (s *Session) enqueueInbound(msg InboundMessage) {
-	s.inboxMu.Lock()
-	defer s.inboxMu.Unlock()
-
-	const maxInboxSize = 100
-	if len(s.inbox) >= maxInboxSize {
-		s.inbox = s.inbox[1:]
-	}
-
-	s.inbox = append(s.inbox, msg)
-}
-
-func (s *Session) DrainInbox() []InboundMessage {
-	s.inboxMu.Lock()
-	defer s.inboxMu.Unlock()
-
-	if len(s.inbox) == 0 {
-		return nil
-	}
-
-	messages := s.inbox
-	s.inbox = nil
-
-	return messages
+func (s *Session) DrainInbox() ([]mailbox.Message, error) {
+	return s.mailbox.Drain()
 }
 
 func (s *Session) readLoop() {
@@ -389,11 +363,14 @@ func (s *Session) readLoop() {
 				_ = json.Unmarshal(envelope.Params, &inbound)
 
 				sender := s.conn.RemoteAddr().String()
-				s.enqueueInbound(InboundMessage{
+				err := s.mailbox.Enqueue(mailbox.Message{
 					Timestamp: time.Now().UTC(),
 					Sender:    sender,
 					Content:   inbound.Message,
 				})
+				if err != nil {
+					log.Printf("error enqueuing inbound message: %v", err)
+				}
 				res := Response{
 					JSONRPC: "2.0",
 					ID:      envelope.ID,

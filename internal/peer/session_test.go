@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Uhm-why/caduceus/internal/config"
+	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
 
 func setupTestPipe(t *testing.T) (*tls.Conn, *tls.Conn) {
@@ -79,9 +80,17 @@ func setupTestSessionPair(t *testing.T) (*Session, *Session, *tls.Conn, *tls.Con
 	serverConfig := config.DefaultConfig()
 	clientConfig := config.DefaultConfig()
 
-	serverSession := NewSession(serverConfig)
+	serverMB, err := mailbox.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create server mailbox: %v", err)
+	}
+	clientMB, err := mailbox.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create client mailbox: %v", err)
+	}
+	serverSession := NewSession(serverConfig, serverMB)
 
-	clientSession := NewSession(clientConfig)
+	clientSession := NewSession(clientConfig, clientMB)
 
 	t.Cleanup(func() {
 		clientSession.Close()
@@ -221,8 +230,11 @@ func TestHandshake_PrematureRPCRejected(t *testing.T) {
 	if res.Error.Message != "handshake required" {
 		t.Fatalf("expected error message 'handshake required', got %s", res.Error.Message)
 	}
-
-	if len(serverSession.DrainInbox()) != 0 {
+	msgs, err := serverSession.DrainInbox()
+	if err != nil {
+		t.Fatalf("error draining inbox: %v", err)
+	}
+	if len(msgs) != 0 {
 		t.Fatalf("server should not have delivered premature message to inbox")
 	}
 }

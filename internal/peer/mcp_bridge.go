@@ -279,15 +279,15 @@ func (b *Bridge) Serve(ctx context.Context) error {
 			}
 
 			if callParams.Name == "agent_peer_inbox" {
-				emptyInboxMsg := fmt.Sprintf("Inbox is empty")
-				messages := b.session.DrainInbox()
-				if len(messages) == 0 {
+				messages, err := b.session.DrainInbox()
+				if err != nil {
 					b.writeResponse(StdioResponse{
 						JSONRPC: "2.0",
 						ID:      req.ID,
 						Result: map[string]any{
+							"isError": true,
 							"content": []map[string]any{
-								{"type": "text", "text": emptyInboxMsg},
+								{"type": "text", "text": fmt.Sprintf("Error draining inbox: %v", err)},
 							},
 						},
 					})

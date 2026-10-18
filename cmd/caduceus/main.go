@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Uhm-why/caduceus/internal/config"
+	"github.com/Uhm-why/caduceus/internal/mailbox"
 	"github.com/Uhm-why/caduceus/internal/peer"
 )
 
@@ -22,10 +23,15 @@ func main() {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
+	mb, err := mailbox.New(cfg.MailboxPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize mailbox at %s: %v", cfg.MailboxPath, err)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	session := peer.NewSession(cfg)
+	session := peer.NewSession(cfg, mb)
 	dialer := peer.NewDialer(cfg)
 	bridge := peer.NewBridge(session, dialer)
 
