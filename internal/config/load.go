@@ -82,6 +82,9 @@ func LoadFile(path string, cfg *Config) error {
 	if fc.PeerSAN != nil {
 		cfg.PeerSAN = *fc.PeerSAN
 	}
+	if fc.MailboxPath != nil {
+		cfg.MailboxPath = *fc.MailboxPath
+	}
 	if fc.HandshakeTimeout != nil {
 		cfg.HandshakeTimeout = fc.HandshakeTimeout.Duration()
 	}
