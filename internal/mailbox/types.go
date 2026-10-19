@@ -5,9 +5,12 @@ import (
 )
 
 type Message struct {
-	Timestamp time.Time `json:"timestamp"`
-	Sender    string    `json:"sender"`
-	Content   string    `json:"content"`
+	ID            string    `json:"id,omitempty"`
+	CorrelationID string    `json:"correlation_id,omitempty"`
+	Kind          string    `json:"kind,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
+	Sender        string    `json:"sender"`
+	Content       string    `json:"content"`
 }
 
 type Mailbox interface {

@@ -358,15 +358,21 @@ func (s *Session) readLoop() {
 
 			} else if envelope.Method == "agent/message" && envelope.ID > 0 {
 				var inbound struct {
-					Message string `json:"message"`
+					CorrelationID string `json:"correlation_id"`
+					Kind          string `json:"kind"`
+					Message       string `json:"message"`
 				}
 				_ = json.Unmarshal(envelope.Params, &inbound)
-
+				if inbound.Kind == "" {
+					inbound.Kind = "message"
+				}
 				sender := s.conn.RemoteAddr().String()
 				err := s.mailbox.Enqueue(mailbox.Message{
-					Timestamp: time.Now().UTC(),
-					Sender:    sender,
-					Content:   inbound.Message,
+					CorrelationID: inbound.CorrelationID,
+					Kind:          inbound.Kind,
+					Timestamp:     time.Now().UTC(),
+					Sender:        sender,
+					Content:       inbound.Message,
 				})
 				if err != nil {
 					log.Printf("error enqueuing inbound message: %v", err)
