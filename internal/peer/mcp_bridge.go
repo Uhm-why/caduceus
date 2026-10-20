@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"sync"
+	"time"
 )
 
 type Bridge struct {
@@ -126,6 +128,67 @@ var agentPeerCapabilitiesTool = ToolDescriptor{
 	},
 }
 
+var agentPeerConsultTool = ToolDescriptor{
+	Name:        "agent_peer_consult",
+	Description: "Consult a peer agent for a question or guidance",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"query": {
+				Type:        "string",
+				Description: "Specific advice, question, or guidance requested",
+			},
+			"context": {
+				Type:        "string",
+				Description: "Background constraints, code snippets, or system logs",
+			},
+		},
+		Required: []string{"query"},
+	},
+}
+
+var agentPeerReviewTool = ToolDescriptor{
+	Name:        "agent_peer_review",
+	Description: "Request review of code diffs, configuration files, or architectural text",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"artifact": {
+				Type:        "string",
+				Description: "Code diff, configuration file, or architectural text",
+			},
+			"rubric": {
+				Type:        "string",
+				Description: "Review criteria (e.g. \"memory leaks\", \"security\", \"style\")",
+			},
+		},
+		Required: []string{"artifact"},
+	},
+}
+
+var agentPeerReplyTool = ToolDescriptor{
+	Name:        "agent_peer_reply",
+	Description: "Response to a peer agent's consult or review request",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"ticket_id": {
+				Type:        "string",
+				Description: "The correlation ID of the consult or review request",
+			},
+			"response": {
+				Type:        "string",
+				Description: "The synthesized advice, answer, or code review findings",
+			},
+			"status": {
+				Type:        "string",
+				Description: "\"completed\", \"rejected\", \"need_more_info\" (defaults to \"completed\")",
+			},
+		},
+		Required: []string{"ticket_id", "response"},
+	},
+}
+
 func (b *Bridge) ensureConnected(ctx context.Context) error {
 	b.dialMu.Lock()
 	defer b.dialMu.Unlock()
@@ -196,6 +259,9 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						agentPeerStatusTool,
 						agentPeerInboxTool,
 						agentPeerCapabilitiesTool,
+						agentPeerConsultTool,
+						agentPeerReviewTool,
+						agentPeerReplyTool,
 					},
 				},
 			})
@@ -388,6 +454,326 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					Result: map[string]any{
 						"content": []map[string]any{
 							{"type": "text", "text": string(data)},
+						},
+					},
+				})
+
+			}
+			if callParams.Name == "agent_peer_consult" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("consultative") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have consultative capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var inboundArgs struct {
+					Query   string `json:"query"`
+					Context string `json:"context,omitempty"`
+				}
+				var peerSessionInbound struct {
+					CorrelationID string `json:"correlation_id"`
+					Kind          string `json:"kind"`
+					Message       string `json:"message"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &inboundArgs)
+
+				if inboundArgs.Query == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Query is a required value"},
+							},
+						},
+					})
+					break
+				}
+
+				peerSessionInbound.CorrelationID = fmt.Sprintf("tkt-%d-%d", time.Now().UTC().UnixNano(), rand.Int())
+				peerSessionInbound.Kind = "consult_request"
+
+				if inboundArgs.Context != "" {
+					peerSessionInbound.Message = fmt.Sprintf("%s\n%s", inboundArgs.Query, inboundArgs.Context)
+				} else {
+					peerSessionInbound.Message = fmt.Sprintf("%s", inboundArgs.Query)
+				}
+
+				payloadBytes, err := json.Marshal(peerSessionInbound)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("error marshalling json: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				_, err = b.session.SendRequest(ctx, "agent/message", payloadBytes)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("failed to send consultation: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Consultation enqueued to peer. Check agent_peer_inbox for matching ticket id. Ticket ID: %s.", peerSessionInbound.CorrelationID)},
+						},
+					},
+				})
+			}
+
+			if callParams.Name == "agent_peer_review" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("consultative") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have consultative capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var inboundArgs struct {
+					Artifact string `json:"artifact"`
+					Rubric   string `json:"rubric,omitempty"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &inboundArgs)
+
+				if inboundArgs.Artifact == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Artifact is a required value"},
+							},
+						},
+					})
+					break
+				}
+
+				var peerSessionInbound struct {
+					CorrelationID string `json:"correlation_id"`
+					Kind          string `json:"kind"`
+					Message       string `json:"message"`
+				}
+
+				peerSessionInbound.CorrelationID = fmt.Sprintf("tkt-%d-%d", time.Now().UTC().UnixNano(), rand.Int())
+				peerSessionInbound.Kind = "review_request"
+				if inboundArgs.Rubric != "" {
+					peerSessionInbound.Message = fmt.Sprintf("%s\n\nRubric:\n%s", inboundArgs.Artifact, inboundArgs.Rubric)
+				} else {
+					peerSessionInbound.Message = fmt.Sprintf("%s", inboundArgs.Artifact)
+				}
+
+				payloadBytes, err := json.Marshal(peerSessionInbound)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("error marshalling json: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				_, err = b.session.SendRequest(ctx, "agent/message", payloadBytes)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("failed to send review request: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Review Request enqueued to peer. Check agent_peer_inbox for matching ticket id. Ticket ID: %s.", peerSessionInbound.CorrelationID)},
+						},
+					},
+				})
+
+			}
+
+			if callParams.Name == "agent_peer_reply" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("consultative") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have consultative capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var inboundArgs struct {
+					TicketID string `json:"ticket_id"`
+					Response string `json:"response"`
+					Status   string `json:"status,omitempty"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &inboundArgs)
+
+				if inboundArgs.TicketID == "" || inboundArgs.Response == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Ticket ID and Response are required values"},
+							},
+						},
+					})
+					break
+				}
+
+				var peerSessionInbound struct {
+					Status        string `json:"status"`
+					CorrelationID string `json:"correlation_id"`
+					Kind          string `json:"kind"`
+					Message       string `json:"message"`
+				}
+
+				if inboundArgs.Status == "" {
+					peerSessionInbound.Status = "completed"
+				} else {
+					peerSessionInbound.Status = inboundArgs.Status
+				}
+
+				peerSessionInbound.CorrelationID = inboundArgs.TicketID
+				peerSessionInbound.Kind = "reply"
+				peerSessionInbound.Message = fmt.Sprintf("[%s] %s", peerSessionInbound.Status, inboundArgs.Response)
+
+				payloadBytes, err := json.Marshal(peerSessionInbound)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("error marshalling json: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				_, err = b.session.SendRequest(ctx, "agent/message", payloadBytes)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("failed to send reply: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Reply enqueued to peer. Check agent_peer_inbox for matching ticket id. Ticket ID: %s.", peerSessionInbound.CorrelationID)},
 						},
 					},
 				})
