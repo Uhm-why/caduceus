@@ -238,3 +238,105 @@ func TestHandshake_PrematureRPCRejected(t *testing.T) {
 		t.Fatalf("server should not have delivered premature message to inbox")
 	}
 }
+
+func TestConsultative_TicketFlow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	if err := serverSession.Attach(ctx, serverConn); err != nil {
+		t.Fatalf("server attach: %v", err)
+	}
+
+	if err := clientSession.Attach(ctx, clientConn); err != nil {
+		t.Fatalf("client attach: %v", err)
+	}
+
+	if err := clientSession.PerformHandshake(ctx); err != nil {
+		t.Fatalf("perform handshake: %v", err)
+	}
+
+	if !clientSession.HasRemoteFeature("consultative") {
+		t.Fatalf("client does not report consultative capability")
+	}
+	if !serverSession.HasRemoteFeature("consultative") {
+		t.Fatalf("server does not report consultative capability")
+	}
+
+	_, err := clientSession.SendRequest(ctx, "agent/message", []byte(`{"message":"standard ping"}`))
+	if err != nil {
+		t.Fatalf("send standard message: %v", err)
+	}
+
+	msgs, err := serverSession.DrainInbox()
+	if err != nil {
+		t.Fatalf("drain server inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message in server inbox, got %d", len(msgs))
+	}
+	if msgs[0].Kind != "message" {
+		t.Fatalf("expected kind 'message', got '%s'", msgs[0].Kind)
+	}
+	if msgs[0].CorrelationID != "" {
+		t.Fatalf("expected empty correlation ID, got '%s'", msgs[0].CorrelationID)
+	}
+	if msgs[0].Content != "standard ping" {
+		t.Fatalf("expected content 'standard ping', got '%s'", msgs[0].Content)
+	}
+
+	consultPayload := []byte(`{
+		"correlation_id": "tkt-test-1001",
+		"kind": "consult_request",
+		"message": "how should we architect this?"
+	}`)
+	_, err = clientSession.SendRequest(ctx, "agent/message", consultPayload)
+	if err != nil {
+		t.Fatalf("send consult request: %v", err)
+	}
+
+	msgs, err = serverSession.DrainInbox()
+	if err != nil {
+		t.Fatalf("drain server inbox for consult: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 consult message in server inbox, got %d", len(msgs))
+	}
+	if msgs[0].Kind != "consult_request" {
+		t.Fatalf("expected kind 'consult_request', got '%s'", msgs[0].Kind)
+	}
+	if msgs[0].CorrelationID != "tkt-test-1001" {
+		t.Fatalf("expected correlation ID 'tkt-test-1001', got '%s'", msgs[0].CorrelationID)
+	}
+	if msgs[0].Content != "how should we architect this?" {
+		t.Fatalf("expected consult content, got '%s'", msgs[0].Content)
+	}
+
+	replyPayload := []byte(`{
+		"correlation_id": "tkt-test-1001",
+		"kind": "reply",
+		"message": "[completed] use pattern B"
+	}`)
+	_, err = serverSession.SendRequest(ctx, "agent/message", replyPayload)
+	if err != nil {
+		t.Fatalf("send reply: %v", err)
+	}
+
+	clientMsgs, err := clientSession.DrainInbox()
+	if err != nil {
+		t.Fatalf("drain client inbox for reply: %v", err)
+	}
+	if len(clientMsgs) != 1 {
+		t.Fatalf("expected 1 reply message in client inbox, got %d", len(clientMsgs))
+	}
+	if clientMsgs[0].Kind != "reply" {
+		t.Fatalf("expected kind 'reply', got '%s'", clientMsgs[0].Kind)
+	}
+	if clientMsgs[0].CorrelationID != "tkt-test-1001" {
+		t.Fatalf("expected correlation ID 'tkt-test-1001', got '%s'", clientMsgs[0].CorrelationID)
+	}
+	if clientMsgs[0].Content != "[completed] use pattern B" {
+		t.Fatalf("expected reply content, got '%s'", clientMsgs[0].Content)
+	}
+}
