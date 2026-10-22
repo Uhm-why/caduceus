@@ -81,13 +81,13 @@ func TestMaildir_EnqueueAndDrainFIFO(t *testing.T) {
 	}
 
 	if drained[0].Sender != testMsgOne.Sender || drained[0].Content != testMsgOne.Content {
-		t.Fatalf("ordering check: expected testMsgOne to have `caduceus-agent1` sender and constant `This is test message one`, but got Sender: %s, Content: %s", drained[0].Sender, drained[0].Content)
+		t.Fatalf("ordering check: expected testMsgOne to have `caduceus-agent1` sender and content `This is test message 1`, but got Sender: %s, Content: %s", drained[0].Sender, drained[0].Content)
 	}
 	if drained[1].Sender != testMsgTwo.Sender || drained[1].Content != testMsgTwo.Content {
-		t.Fatalf("ordering check: expected testMsgTwo to have `caduceus-agent2` sender and constant `This is test message two`, but got Sender: %s, Content: %s", drained[1].Sender, drained[1].Content)
+		t.Fatalf("ordering check: expected testMsgTwo to have `caduceus-agent2` sender and content `This is test message 2`, but got Sender: %s, Content: %s", drained[1].Sender, drained[1].Content)
 	}
 	if drained[2].Sender != testMsgThree.Sender || drained[2].Content != testMsgThree.Content {
-		t.Fatalf("ordering check: expected testMsgThree to have `caduceus-agent3` sender and constant `This is test message three`, but got Sender: %s, Content: %s", drained[2].Sender, drained[2].Content)
+		t.Fatalf("ordering check: expected testMsgThree to have `caduceus-agent3` sender and content `This is test message 3`, but got Sender: %s, Content: %s", drained[2].Sender, drained[2].Content)
 	}
 }
 
@@ -181,10 +181,10 @@ func TestMaildir_PersistenceAcrossRestarts(t *testing.T) {
 	}
 
 	if drained[0].Sender != messageOne.Sender || drained[0].Content != messageOne.Content {
-		t.Fatalf("ordering check: expected message one to have `caduceus-agent1` sender and constant `This is test message one`, but got Sender: %s, Content: %s", drained[0].Sender, drained[0].Content)
+		t.Fatalf("ordering check: expected message one to have `caduceus-agent1` sender and content `This is test message 1`, but got Sender: %s, Content: %s", drained[0].Sender, drained[0].Content)
 	}
 	if drained[1].Sender != messageTwo.Sender || drained[1].Content != messageTwo.Content {
-		t.Fatalf("ordering check: expected message two to have `caduceus-agent2` sender and constant `This is test message two`, but got Sender: %s, Content: %s", drained[1].Sender, drained[1].Content)
+		t.Fatalf("ordering check: expected message two to have `caduceus-agent2` sender and content `This is test message 2`, but got Sender: %s, Content: %s", drained[1].Sender, drained[1].Content)
 	}
 
 }

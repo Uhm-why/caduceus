@@ -87,7 +87,7 @@ func (s *Session) validatePeerCapabilities(remote *Capabilities) error {
 		return fmt.Errorf("major version mismatch between local and remote")
 	}
 	if !remote.HasFeature("messaging") {
-		return fmt.Errorf("Remote missing messaging feature")
+		return fmt.Errorf("remote missing messaging feature")
 	}
 
 	return nil

@@ -178,8 +178,8 @@ func (c Config) Validate() error {
 func ParseAndLoad(args []string) (*Config, error) {
 	flags := flag.NewFlagSet("caduceus", flag.ContinueOnError)
 	listenFlag := flags.String("listen", "", "Address to bind for incoming peer connections (e.g. :8443).")
-	ipFlag := flags.String("ip", "", "The ip and port [0.0.0.0:0000] of the other machine running hermes to connect to.")
-	configFlag := flags.String("config", "", "The directory where your caduceus certificates are stored.")
+	ipFlag := flags.String("ip", "", "The IP and port [0.0.0.0:0000] of the other machine running caduceus to connect to.")
+	configFlag := flags.String("config", "", "The directory or file path where caduceus configuration is stored.")
 	mailboxFlag := flags.String("mailbox-path", "", "The directory where caduceus persists queued messages.")
 	sanFlag := flags.String("san", "", "Expected Subject Alternative Name (SAN)")
 	handshakeTimeoutFlag := flags.String("handshake-timeout", "", "The amount of time (in seconds) the agent will wait on a handshake before aborting.")
