@@ -17,7 +17,7 @@ func DefaultCapabilities() *Capabilities {
 	return &Capabilities{
 		Version:  "1.0.0",
 		Agent:    "caduceus-agent",
-		Features: []string{"messaging", "consultative"},
+		Features: []string{"messaging", "consultative", "tasks"},
 		Metadata: map[string]string{
 			"os":   runtime.GOOS,
 			"arch": runtime.GOARCH,

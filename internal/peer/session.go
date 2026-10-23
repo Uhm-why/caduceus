@@ -32,6 +32,7 @@ type Session struct {
 	localCaps  *Capabilities
 	remoteCaps *Capabilities
 	capsMu     sync.RWMutex
+	tasks      TaskManager
 }
 
 var ErrSessionActive = errors.New("session already active")
@@ -45,6 +46,7 @@ func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 		mailbox:    mb,
 		localCaps:  DefaultCapabilities(),
 		remoteCaps: nil,
+		tasks:      NewTaskManager(mb),
 	}
 }
 
@@ -72,6 +74,10 @@ func (s *Session) HasRemoteFeature(feature string) bool {
 	}
 
 	return false
+}
+
+func (s *Session) TaskManager() TaskManager {
+	return s.tasks
 }
 
 func (s *Session) validatePeerCapabilities(remote *Capabilities) error {
