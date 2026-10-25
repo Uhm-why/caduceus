@@ -340,3 +340,117 @@ func TestConsultative_TicketFlow(t *testing.T) {
 		t.Fatalf("expected reply content, got '%s'", clientMsgs[0].Content)
 	}
 }
+
+func TestTaskDelegation_WireFlow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	serverSession.Attach(ctx, serverConn)
+	clientSession.Attach(ctx, clientConn)
+
+	clientSession.PerformHandshake(ctx)
+
+	if !clientSession.HasRemoteFeature("tasks") {
+		t.Fatalf("client missing remote tasks feature")
+	}
+
+	if !serverSession.HasRemoteFeature("tasks") {
+		t.Fatalf("server missing remote tasks feature")
+	}
+
+	req := &TaskDispatchRequest{
+		TaskID:     "tkt-wire-001",
+		Objective:  "Inspect RF trace",
+		Context:    "Spectrum analyzer 10 GHz",
+		TimeoutSec: 60,
+	}
+
+	res, err := clientSession.DispatchTask(ctx, *req)
+	if err != nil {
+		t.Fatalf("error dispatching task: %v", err)
+	}
+
+	if res.Accepted != true {
+		t.Fatalf("task not accepted by server")
+	}
+	if res.InitialState != "running" {
+		t.Fatalf("initial state from server not `running`, current state: %s", res.InitialState)
+	}
+	if res.TaskID != "tkt-wire-001" {
+		t.Fatalf("task id does not match the one sent to the server, received: %s", res.TaskID)
+	}
+
+	srvTask, ok := serverSession.TaskManager().Get("tkt-wire-001")
+	if !ok {
+		t.Fatalf("server does not have a task with id `tkt-wire-001`")
+	}
+	if srvTask.State != TaskStateRunning {
+		t.Fatalf("server task not in TaskStateRunning, got %s", srvTask.State.String())
+	}
+	if srvTask.Objective != "Inspect RF trace" {
+		t.Fatalf("expected server task to have objective `Inspect RF trace`, but got %s", srvTask.Objective)
+	}
+
+	status, err := clientSession.QueryTaskStatus(ctx, "tkt-wire-001")
+	if err != nil {
+		t.Fatalf("error when sending task status query from client: %v", err)
+	}
+	if status.TaskID != "tkt-wire-001" {
+		t.Fatalf("queried task id set to %s, expected `tkt-wire-001`", status.TaskID)
+	}
+	if status.State != "running" {
+		t.Fatalf("queried task state not `running`, got %s", status.State)
+	}
+
+	serverSession.TaskManager().UpdateProgress("tkt-wire-001", "trace sweep complete")
+	artifacts := []string{"/logs/trace.png"}
+	serverSession.TaskManager().Complete("tkt-wire-001", "impedance matched 50 ohms", artifacts)
+	statusDone, err := clientSession.QueryTaskStatus(ctx, "tkt-wire-001")
+	if err != nil {
+		t.Fatalf("error querying status after server completed task: %v", err)
+	}
+	if statusDone.State != "completed" {
+		t.Fatalf("expected completed task status after server completed task, got %s", statusDone.State)
+	}
+	if statusDone.Progress != "trace sweep complete" {
+		t.Fatalf("expected progress to be `trace sweep complete`, got %s", statusDone.Progress)
+	}
+	if statusDone.Result != "impedance matched 50 ohms" {
+		t.Fatalf("expected result to be `impedance matched 50 ohms`, got %s", statusDone.Result)
+	}
+	if len(statusDone.Artifacts) != 1 || statusDone.Artifacts[0] != "/logs/trace.png" {
+		t.Fatalf("expected there to be 1 artifact `/logs/trace.png`, got %v", statusDone.Artifacts)
+	}
+
+	req2 := TaskDispatchRequest{
+		TaskID:    "tkt-wire-002",
+		Objective: "Long burn-in",
+	}
+
+	clientSession.DispatchTask(ctx, req2)
+	cancelRes, err := clientSession.CancelTask(ctx, "tkt-wire-002", "emergency shutdown")
+	if err != nil {
+		t.Fatalf("error while client attempted to cancel task on server: %v", err)
+	}
+	if cancelRes.Canceled != true {
+		t.Fatalf("server did not cancel task")
+	}
+	if cancelRes.FinalState != "aborted" {
+		t.Fatalf("expected cancelled task final state to be `aborted`, got %s", cancelRes.FinalState)
+	}
+
+	statusAborted, err := clientSession.QueryTaskStatus(ctx, "tkt-wire-002")
+	if err != nil {
+		t.Fatalf("error while client queried state of cancelled task: %v", err)
+	}
+	if statusAborted.State != "aborted" {
+		t.Fatalf("expected state returned from server for an aborted task to be `aborted`, got %s", statusAborted.State)
+	}
+
+	_, err = clientSession.QueryTaskStatus(ctx, "tkt-nonexistent")
+
+	if err == nil {
+		t.Fatalf("expected error when client requested status of non-existent task, got nil")
+	}
+}
