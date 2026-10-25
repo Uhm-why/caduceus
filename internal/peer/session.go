@@ -283,6 +283,98 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 
 }
 
+func (s *Session) DispatchTask(ctx context.Context, req TaskDispatchRequest) (*TaskDispatchResponse, error) {
+	params, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling task dispatch request: %w", err)
+	}
+
+	rawResp, err := s.SendRequest(ctx, "agent/task/dispatch", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var rpcRes Response
+	if err := json.Unmarshal(rawResp, &rpcRes); err != nil {
+		return nil, fmt.Errorf("unmarshaling task dispatch response: %w", err)
+	}
+
+	if rpcRes.Error != nil {
+		return nil, rpcRes.Error
+	}
+
+	var dispatchRes TaskDispatchResponse
+	if err := json.Unmarshal(rpcRes.Result, &dispatchRes); err != nil {
+		return nil, fmt.Errorf("unmarshaling task dispatch result: %w", err)
+	}
+
+	return &dispatchRes, nil
+}
+
+func (s *Session) QueryTaskStatus(ctx context.Context, taskID string) (*TaskStatusResponse, error) {
+	req := &TaskStatusRequest{TaskID: taskID}
+	params, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling task query: %w", err)
+	}
+
+	rawResp, err := s.SendRequest(ctx, "agent/task/status", params)
+	if err != nil {
+		return nil, fmt.Errorf("sending task status request: %w", err)
+	}
+	var rpcRes Response
+	err = json.Unmarshal(rawResp, &rpcRes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling task status response: %w", err)
+	}
+
+	if rpcRes.Error != nil {
+		return nil, rpcRes.Error
+	}
+
+	var statusRes TaskStatusResponse
+	err = json.Unmarshal(rpcRes.Result, &statusRes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling task status RPC response: %w", err)
+	}
+
+	return &statusRes, nil
+}
+
+func (s *Session) CancelTask(ctx context.Context, taskID string, reason string) (*TaskCancelResponse, error) {
+	req := &TaskCancelRequest{
+		TaskID: taskID,
+		Reason: reason,
+	}
+
+	params, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling task cancel request: %w", err)
+	}
+
+	rawResp, err := s.SendRequest(ctx, "agent/task/cancel", params)
+	if err != nil {
+		return nil, fmt.Errorf("sending task cancel request: %w", err)
+	}
+	var rpcRes Response
+	err = json.Unmarshal(rawResp, &rpcRes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling task cancel RPC response: %w", err)
+	}
+
+	if rpcRes.Error != nil {
+		return nil, rpcRes.Error
+	}
+
+	var cancelRes TaskCancelResponse
+	err = json.Unmarshal(rpcRes.Result, &cancelRes)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling task cancel result: %w", err)
+	}
+
+	return &cancelRes, nil
+}
+
 func (s *Session) DrainInbox() ([]mailbox.Message, error) {
 	return s.mailbox.Drain()
 }
