@@ -190,6 +190,54 @@ func (s *Session) writeFrame(data []byte) error {
 	return err
 }
 
+func (s *Session) sendErrorResponse(id uint64, code int, message string) error {
+	res := &Response{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error: &RPCError{
+			Code:    code,
+			Message: message,
+		},
+	}
+
+	payload, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+
+	return s.writeFrame(payload)
+}
+
+func (s *Session) sendSuccessResponse(id uint64, result any) error {
+	var resultBytes []byte
+
+	switch v := result.(type) {
+	case []byte:
+		resultBytes = v
+	case json.RawMessage:
+		resultBytes = v
+	default:
+		var err error
+		resultBytes, err = json.Marshal(v)
+		if err != nil {
+			return err
+		}
+	}
+
+	res := &Response{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result:  resultBytes,
+	}
+
+	payload, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+
+	return s.writeFrame(payload)
+}
+
 func (s *Session) SendRequest(ctx context.Context, method string, params []byte) ([]byte, error) {
 	id := s.nextID.Add(1)
 
@@ -393,6 +441,83 @@ func (s *Session) readLoop() {
 					continue
 				}
 				_ = s.writeFrame(outPayload)
+			} else if envelope.Method == "agent/task/dispatch" && envelope.ID > 0 {
+				var req TaskDispatchRequest
+				if err := json.Unmarshal(envelope.Params, &req); err != nil {
+					_ = s.sendErrorResponse(envelope.ID, -32602, "error unmarshaling dispatch envelope params")
+					continue
+				}
+
+				var (
+					taskCtx  context.Context
+					cancelFn context.CancelFunc
+				)
+				if s.ctx != nil {
+					taskCtx, cancelFn = context.WithCancel(s.ctx)
+				} else {
+					taskCtx, cancelFn = context.WithCancel(context.Background())
+				}
+
+				_ = taskCtx
+
+				dispatchRes, err := s.tasks.Dispatch(req, cancelFn)
+				if err != nil {
+					_ = s.sendErrorResponse(envelope.ID, -32000, err.Error())
+					continue
+				}
+
+				_ = s.sendSuccessResponse(envelope.ID, dispatchRes)
+
+			} else if envelope.Method == "agent/task/status" && envelope.ID > 0 {
+				var req TaskStatusRequest
+				if err := json.Unmarshal(envelope.Params, &req); err != nil {
+					_ = s.sendErrorResponse(envelope.ID, -32602, "error unmarshaling status envelope params")
+					continue
+				}
+
+				task, ok := s.tasks.Get(req.TaskID)
+				if !ok {
+					_ = s.sendErrorResponse(envelope.ID, -32001, "task not found: "+req.TaskID)
+					continue
+				}
+
+				task.mu.RLock()
+				var elapsed int64
+				if !task.CreatedAt.IsZero() {
+					if !task.CompletedAt.IsZero() {
+						elapsed = int64(task.CompletedAt.Sub(task.CreatedAt).Seconds())
+					} else {
+						elapsed = int64(time.Since(task.CreatedAt).Seconds())
+					}
+				}
+
+				statusRes := &TaskStatusResponse{
+					TaskID:     task.ID,
+					State:      task.State.String(),
+					Progress:   task.Progress,
+					Result:     task.Result,
+					Artifacts:  task.Artifacts,
+					Error:      task.ErrorMsg,
+					ElapsedSec: elapsed,
+				}
+				task.mu.RUnlock()
+
+				_ = s.sendSuccessResponse(envelope.ID, statusRes)
+
+			} else if envelope.Method == "agent/task/cancel" && envelope.ID > 0 {
+				var req TaskCancelRequest
+				if err := json.Unmarshal(envelope.Params, &req); err != nil {
+					_ = s.sendErrorResponse(envelope.ID, -32602, "error unmarshaling cancel envelope params")
+					continue
+				}
+
+				cancelRes, err := s.tasks.Cancel(req.TaskID, req.Reason)
+				if err != nil {
+					_ = s.sendErrorResponse(envelope.ID, -32001, err.Error())
+					continue
+				}
+
+				_ = s.sendSuccessResponse(envelope.ID, cancelRes)
 			}
 		}
 
