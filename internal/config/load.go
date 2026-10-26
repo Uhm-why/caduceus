@@ -100,6 +100,23 @@ func LoadFile(path string, cfg *Config) error {
 	if fc.MaxFrameSize != nil {
 		cfg.MaxFrameSize = *fc.MaxFrameSize
 	}
+	if fc.Compactor != nil {
+		if fc.Compactor.MaxLines != nil {
+			cfg.Compactor.MaxLines = *fc.Compactor.MaxLines
+		}
+		if fc.Compactor.HeadLines != nil {
+			cfg.Compactor.HeadLines = *fc.Compactor.HeadLines
+		}
+		if fc.Compactor.TailLines != nil {
+			cfg.Compactor.TailLines = *fc.Compactor.TailLines
+		}
+		if fc.Compactor.SpilloverDir != nil {
+			cfg.Compactor.SpilloverDir = *fc.Compactor.SpilloverDir
+		}
+		if fc.Compactor.EnableSpill != nil {
+			cfg.Compactor.EnableSpill = *fc.Compactor.EnableSpill
+		}
+	}
 
 	return nil
 }

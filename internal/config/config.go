@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Uhm-why/caduceus/internal/compactor"
 )
 
 type Duration time.Duration
@@ -44,6 +46,14 @@ func (d Duration) Duration() time.Duration {
 	return duration
 }
 
+type fileCompactorConfig struct {
+	MaxLines     *int    `json:"max_lines"`
+	HeadLines    *int    `json:"head_lines"`
+	TailLines    *int    `json:"tail_lines"`
+	SpilloverDir *string `json:"spillover_dir"`
+	EnableSpill  *bool   `json:"enable_spill"`
+}
+
 type Config struct {
 	ListenAddress string
 	PeerAddress   string
@@ -60,6 +70,7 @@ type Config struct {
 	KeepAlive        time.Duration
 
 	MaxFrameSize int
+	Compactor    compactor.Config
 }
 
 type fileConfig struct {
@@ -77,7 +88,8 @@ type fileConfig struct {
 	IdleTimeout      *Duration `json:"idle_timeout"`
 	KeepAlive        *Duration `json:"keep_alive"`
 
-	MaxFrameSize *int `json:"max_frame_size"`
+	MaxFrameSize *int                 `json:"max_frame_size"`
+	Compactor    *fileCompactorConfig `json:"compactor"`
 }
 
 func DefaultConfigDir() string {
@@ -92,6 +104,8 @@ func DefaultConfigDir() string {
 
 func DefaultConfig() *Config {
 	baseDir := DefaultConfigDir()
+	compactorCfg := compactor.DefaultConfig()
+	compactorCfg.SpilloverDir = filepath.Join(baseDir, "spillover")
 
 	return &Config{
 		ListenAddress: "",
@@ -109,19 +123,22 @@ func DefaultConfig() *Config {
 		KeepAlive:        15 * time.Second,
 
 		MaxFrameSize: 10 * 1024 * 1024,
+		Compactor:    compactorCfg,
 	}
 }
 
 var (
-	ErrMissingNetworkMode  = errors.New("at least one of ListenAddress or PeerAddress must be configured")
-	ErrMissingCertPath     = errors.New("missing CertPath")
-	ErrMissingKeyPath      = errors.New("missing KeyPath")
-	ErrMissingCAPath       = errors.New("missing CAPath")
-	ErrMissingPeerSAN      = errors.New("missing PeerSAN")
-	ErrInvalidPEMFormat    = errors.New("invalid PEM format")
-	ErrMissingMailboxPath  = errors.New("missing MailboxPath")
-	ErrInvalidTimeout      = errors.New("invalid Timeout")
-	ErrInvalidMaxFrameSize = errors.New("max frame size must be greater than zero")
+	ErrMissingNetworkMode    = errors.New("at least one of ListenAddress or PeerAddress must be configured")
+	ErrMissingCertPath       = errors.New("missing CertPath")
+	ErrMissingKeyPath        = errors.New("missing KeyPath")
+	ErrMissingCAPath         = errors.New("missing CAPath")
+	ErrMissingPeerSAN        = errors.New("missing PeerSAN")
+	ErrInvalidPEMFormat      = errors.New("invalid PEM format")
+	ErrMissingMailboxPath    = errors.New("missing MailboxPath")
+	ErrInvalidTimeout        = errors.New("invalid Timeout")
+	ErrInvalidMaxFrameSize   = errors.New("max frame size must be greater than zero")
+	ErrInvalidCompactorLines = errors.New("compactor max lines must be greater than zero and greater than head plus tail lines")
+	ErrMissingSpilloverDir   = errors.New("missing compactor spillover dir when spillover is enabled")
 )
 
 func (c Config) Validate() error {
@@ -172,6 +189,23 @@ func (c Config) Validate() error {
 		return fmt.Errorf("validation error: %w", ErrInvalidMaxFrameSize)
 	}
 
+	if c.Compactor.MaxLines <= 0 {
+		return fmt.Errorf("validation error: %w", ErrInvalidCompactorLines)
+	}
+
+	if c.Compactor.HeadLines < 0 || c.Compactor.TailLines < 0 {
+		return fmt.Errorf("validation error: %w", ErrInvalidCompactorLines)
+	}
+
+	if (c.Compactor.HeadLines + c.Compactor.TailLines) >= c.Compactor.MaxLines {
+		return fmt.Errorf("validation error: %w", ErrInvalidCompactorLines)
+	}
+	if c.Compactor.EnableSpill {
+		if c.Compactor.SpilloverDir == "" {
+			return fmt.Errorf("validation error: %w", ErrMissingSpilloverDir)
+		}
+	}
+
 	return nil
 }
 
@@ -207,6 +241,7 @@ func ParseAndLoad(args []string) (*Config, error) {
 		cfg.TLSKeyPath = filepath.Join(baseDir, "key.pem")
 		cfg.CAPath = filepath.Join(baseDir, "ca.pem")
 		cfg.MailboxPath = filepath.Join(baseDir, "mailbox")
+		cfg.Compactor.SpilloverDir = filepath.Join(baseDir, "spillover")
 	}
 
 	if found {
