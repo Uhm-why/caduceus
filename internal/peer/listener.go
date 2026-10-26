@@ -76,8 +76,8 @@ func (l *Listener) acceptLoop(ctx context.Context, connChan chan<- *tls.Conn, er
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			tlsConn.Close()
 			select {
-				case errChan <- err:
-				default:
+			case errChan <- err:
+			default:
 			}
 			continue
 		}
@@ -85,12 +85,11 @@ func (l *Listener) acceptLoop(ctx context.Context, connChan chan<- *tls.Conn, er
 		tlsConn.SetDeadline(time.Time{})
 
 		select {
-			case connChan <- tlsConn:
-				case <-ctx.Done():
-					tlsConn.Close()
-					return
+		case connChan <- tlsConn:
+		case <-ctx.Done():
+			tlsConn.Close()
+			return
 		}
 	}
-
 
 }
