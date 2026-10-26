@@ -189,6 +189,67 @@ var agentPeerReplyTool = ToolDescriptor{
 	},
 }
 
+var agentPeerDelegateTool = ToolDescriptor{
+	Name:        "agent_peer_delegate",
+	Description: "Delegate a task or job to the connected peer agent for execution",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"objective": {
+				Type:        "string",
+				Description: "The task or job to the connected peer agent for execution",
+			},
+			"context": {
+				Type:        "string",
+				Description: "Background details, file paths, code snippets, or constraints",
+			},
+			"timeout_sec": {
+				Type:        "integer",
+				Description: "Timeout in seconds for task execution (defaults to 60)",
+			},
+			"task_id": {
+				Type:        "string",
+				Description: "Unique task identifier (auto-generated if omitted)",
+			},
+		},
+		Required: []string{"objective"},
+	},
+}
+
+var agentPeerTaskStatusTool = ToolDescriptor{
+	Name:        "agent_peer_task_status",
+	Description: "Query the status, progress, result, and artifacts of a delegated task",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"task_id": {
+				Type:        "string",
+				Description: "The unique task identifier to query",
+			},
+		},
+		Required: []string{"task_id"},
+	},
+}
+
+var agentPeerTaskCancelTool = ToolDescriptor{
+	Name:        "agent_peer_task_cancel",
+	Description: "Cancel or abort an active task running on the peer agent",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"task_id": {
+				Type:        "string",
+				Description: "The unique task identifier to cancel",
+			},
+			"reason": {
+				Type:        "string",
+				Description: "Reason for cancellation",
+			},
+		},
+		Required: []string{"task_id"},
+	},
+}
+
 func (b *Bridge) ensureConnected(ctx context.Context) error {
 	b.dialMu.Lock()
 	defer b.dialMu.Unlock()
@@ -262,6 +323,9 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						agentPeerConsultTool,
 						agentPeerReviewTool,
 						agentPeerReplyTool,
+						agentPeerDelegateTool,
+						agentPeerTaskStatusTool,
+						agentPeerTaskCancelTool,
 					},
 				},
 			})
@@ -774,6 +838,267 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					Result: map[string]any{
 						"content": []map[string]any{
 							{"type": "text", "text": fmt.Sprintf("Reply enqueued to peer. Check agent_peer_inbox for matching ticket id. Ticket ID: %s.", peerSessionInbound.CorrelationID)},
+						},
+					},
+				})
+
+			}
+
+			if callParams.Name == "agent_peer_delegate" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("tasks") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have tasks capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var taskArgs struct {
+					TaskID     string `json:"task_id"`
+					Objective  string `json:"objective"`
+					Context    string `json:"context,omitempty"`
+					TimeoutSec int    `json:"timeout_sec,omitempty"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &taskArgs)
+
+				if taskArgs.Objective == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Objective is a required value"},
+							},
+						},
+					})
+					break
+				}
+
+				if taskArgs.TaskID == "" {
+					taskArgs.TaskID = fmt.Sprintf("task-%d-%d", time.Now().UTC().UnixNano(), rand.Int())
+				}
+
+				if taskArgs.TimeoutSec <= 0 {
+					taskArgs.TimeoutSec = 60
+				}
+
+				dispatchRes, err := b.session.DispatchTask(ctx, TaskDispatchRequest{
+					TaskID:     taskArgs.TaskID,
+					Objective:  taskArgs.Objective,
+					Context:    taskArgs.Context,
+					TimeoutSec: taskArgs.TimeoutSec,
+				})
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error dispatching task: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Task delegated to peer. Task ID: %s, Accepted: %t, Initial State: %s. Use agent_peer_task_status to monitor progress.", dispatchRes.TaskID, dispatchRes.Accepted, dispatchRes.InitialState)},
+						},
+					},
+				})
+
+			}
+
+			if callParams.Name == "agent_peer_task_status" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("tasks") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have tasks capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var statusArgs struct {
+					TaskID string `json:"task_id"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &statusArgs)
+
+				if statusArgs.TaskID == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Task ID is a required value"},
+							},
+						},
+					})
+					break
+				}
+
+				statusRes, err := b.session.QueryTaskStatus(ctx, statusArgs.TaskID)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error querying task status: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				statusText := fmt.Sprintf("Task ID: %s\nState: %s\nProgress: %s\nResult: %s\nArtifacts: %v\nError: %s\nElapsed: %ds",
+					statusRes.TaskID,
+					statusRes.State,
+					statusRes.Progress,
+					statusRes.Result,
+					statusRes.Artifacts,
+					statusRes.Error,
+					statusRes.ElapsedSec,
+				)
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": statusText},
+						},
+					},
+				})
+
+			}
+
+			if callParams.Name == "agent_peer_task_cancel" {
+				if err := b.ensureConnected(ctx); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Failed to connect: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				if !b.session.HasRemoteFeature("tasks") {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Peer agent does not have tasks capability"},
+							},
+						},
+					})
+					break
+				}
+
+				var cancelArgs struct {
+					TaskID string `json:"task_id"`
+					Reason string `json:"reason,omitempty"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &cancelArgs)
+
+				if cancelArgs.TaskID == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "Task ID is a required value"},
+							},
+						},
+					})
+					break
+				}
+
+				cancelRes, err := b.session.CancelTask(ctx, cancelArgs.TaskID, cancelArgs.Reason)
+				if err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error canceling task: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				cancelText := fmt.Sprintf("Task ID: %s, Canceled: %t, Final State: %s",
+					cancelRes.TaskID,
+					cancelRes.Canceled,
+					cancelRes.FinalState,
+				)
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": cancelText},
 						},
 					},
 				})
