@@ -13,8 +13,8 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		MaxLines:    100,
-		HeadLines:   30,
-		TailLines:   70,
+		HeadLines:   25,
+		TailLines:   50,
 		EnableSpill: true,
 	}
 }
