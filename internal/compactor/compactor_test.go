@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStripANSI(t *testing.T) {
@@ -248,4 +249,70 @@ func TestCompactor_EndToEnd(t *testing.T) {
 			t.Fatalf("spillover file was not created on disk: %v", err)
 		}
 	})
+}
+
+func TestCompactor_PruneAndDelete(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := Config{
+		SpilloverDir: tmpDir,
+		EnableSpill:  true,
+	}
+	c := New(cfg)
+
+	// Create an old file (48h old), a fresh file, and a non-.txt file
+	oldPath := filepath.Join(tmpDir, "task-old.txt")
+	newPath := filepath.Join(tmpDir, "task-new.txt")
+	otherPath := filepath.Join(tmpDir, "notes.md")
+
+	if err := os.WriteFile(oldPath, []byte("old log"), 0644); err != nil {
+		t.Fatalf("failed to create old test file: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte("new log"), 0644); err != nil {
+		t.Fatalf("failed to create new test file: %v", err)
+	}
+	if err := os.WriteFile(otherPath, []byte("markdown"), 0644); err != nil {
+		t.Fatalf("failed to create other test file: %v", err)
+	}
+
+	// Backdate the old file to 48 hours ago
+	oldTime := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("failed to set old file mtime: %v", err)
+	}
+
+	// Prune files older than 24h
+	pruned, err := c.Prune(24 * time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error during Prune: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("expected 1 file to be pruned, got %d", pruned)
+	}
+
+	// Verify old file was removed
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("expected old file to be deleted from disk")
+	}
+
+	// Verify new file and non-.txt file were preserved
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("expected new file to still exist: %v", err)
+	}
+	if _, err := os.Stat(otherPath); err != nil {
+		t.Fatalf("expected non-.txt file to still exist: %v", err)
+	}
+
+	// Test DeleteSpillover
+	if err := c.DeleteSpillover("task-new"); err != nil {
+		t.Fatalf("unexpected error deleting spillover: %v", err)
+	}
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		t.Fatalf("expected new file to be deleted via DeleteSpillover")
+	}
+
+	// Test idempotent delete on non-existent file
+	if err := c.DeleteSpillover("nonexistent-task"); err != nil {
+		t.Fatalf("expected nil when deleting non-existent spillover, got: %v", err)
+	}
 }

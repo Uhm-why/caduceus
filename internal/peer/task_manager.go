@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Uhm-why/caduceus/internal/compactor"
 	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
 
@@ -20,9 +21,10 @@ type TaskManager interface {
 }
 
 type DefaultTaskManager struct {
-	tasks   map[string]*Task
-	mu      sync.RWMutex
-	mailbox mailbox.Mailbox
+	tasks     map[string]*Task
+	mu        sync.RWMutex
+	mailbox   mailbox.Mailbox
+	compactor *compactor.Compactor
 }
 
 func NewTaskManager(mb mailbox.Mailbox) *DefaultTaskManager {
@@ -30,6 +32,10 @@ func NewTaskManager(mb mailbox.Mailbox) *DefaultTaskManager {
 		tasks:   make(map[string]*Task),
 		mailbox: mb,
 	}
+}
+
+func (tm *DefaultTaskManager) SetCompactor(c *compactor.Compactor) {
+	tm.compactor = c
 }
 
 func (tm *DefaultTaskManager) Dispatch(req TaskDispatchRequest, cancelFn context.CancelFunc) (*TaskDispatchResponse, error) {
@@ -98,9 +104,16 @@ func (tm *DefaultTaskManager) Complete(taskID string, result string, artifacts [
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 
+	finalResult := result
+	if tm.compactor != nil {
+		if compacted, err := tm.compactor.Compact(result, taskID); err == nil {
+			finalResult = compacted
+		}
+	}
+
 	task.mu.Lock()
 	task.State = TaskStateCompleted
-	task.Result = result
+	task.Result = finalResult
 	task.Artifacts = artifacts
 	task.CompletedAt = time.Now().UTC()
 	task.mu.Unlock()
@@ -109,7 +122,7 @@ func (tm *DefaultTaskManager) Complete(taskID string, result string, artifacts [
 		tm.mailbox.Enqueue(mailbox.Message{
 			Kind:          "task_result",
 			CorrelationID: taskID,
-			Content:       result,
+			Content:       finalResult,
 			Timestamp:     time.Now().UTC(),
 		})
 	}

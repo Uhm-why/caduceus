@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Uhm-why/caduceus/internal/compactor"
 	"github.com/Uhm-why/caduceus/internal/config"
 	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
@@ -33,12 +34,17 @@ type Session struct {
 	remoteCaps *Capabilities
 	capsMu     sync.RWMutex
 	tasks      TaskManager
+	compactor  *compactor.Compactor
 }
 
 var ErrSessionActive = errors.New("session already active")
 var ErrMarshalling = errors.New("error marshaling json")
 
 func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
+	taskMgr := NewTaskManager(mb)
+	comp := compactor.New(cfg.Compactor)
+	taskMgr.SetCompactor(comp)
+
 	return &Session{
 		config:     cfg,
 		state:      StateIdle,
@@ -46,7 +52,8 @@ func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 		mailbox:    mb,
 		localCaps:  DefaultCapabilities(),
 		remoteCaps: nil,
-		tasks:      NewTaskManager(mb),
+		tasks:      taskMgr,
+		compactor:  comp,
 	}
 }
 
@@ -78,6 +85,10 @@ func (s *Session) HasRemoteFeature(feature string) bool {
 
 func (s *Session) TaskManager() TaskManager {
 	return s.tasks
+}
+
+func (s *Session) Compactor() *compactor.Compactor {
+	return s.compactor
 }
 
 func (s *Session) validatePeerCapabilities(remote *Capabilities) error {

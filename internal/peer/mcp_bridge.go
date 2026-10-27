@@ -424,6 +424,14 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					break
 				}
 
+				if b.session.Compactor() != nil {
+					for i := range messages {
+						if compacted, err := b.session.Compactor().Compact(messages[i].Content, messages[i].ID); err == nil {
+							messages[i].Content = compacted
+						}
+					}
+				}
+
 				data, err := json.MarshalIndent(messages, "", "  ")
 
 				if err != nil {
@@ -1000,11 +1008,18 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					break
 				}
 
+				displayResult := statusRes.Result
+				if b.session.Compactor() != nil && displayResult != "" {
+					if compacted, err := b.session.Compactor().Compact(displayResult, statusRes.TaskID); err == nil {
+						displayResult = compacted
+					}
+				}
+
 				statusText := fmt.Sprintf("Task ID: %s\nState: %s\nProgress: %s\nResult: %s\nArtifacts: %v\nError: %s\nElapsed: %ds",
 					statusRes.TaskID,
 					statusRes.State,
 					statusRes.Progress,
-					statusRes.Result,
+					displayResult,
 					statusRes.Artifacts,
 					statusRes.Error,
 					statusRes.ElapsedSec,
