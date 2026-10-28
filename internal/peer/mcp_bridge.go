@@ -250,6 +250,48 @@ var agentPeerTaskCancelTool = ToolDescriptor{
 	},
 }
 
+var agentPeerTaskCompleteTool = ToolDescriptor{
+	Name:        "agent_peer_task_complete",
+	Description: "Mark an active delegated task as completed with results and optional artifacts",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"task_id": {
+				Type:        "string",
+				Description: "The unique task identifier to complete",
+			},
+			"result": {
+				Type:        "string",
+				Description: "The execution output, telemetry, or result of the completed task",
+			},
+			"artifacts": {
+				Type:        "array",
+				Description: "Optional list of file paths or artifacts produced by the task",
+			},
+		},
+		Required: []string{"task_id", "result"},
+	},
+}
+
+var agentPeerTaskProgressTool = ToolDescriptor{
+	Name:        "agent_peer_task_progress",
+	Description: "Update progress notes on an active delegated task",
+	InputSchema: ToolInputSchema{
+		Type: "object",
+		Properties: map[string]PropertyDefinition{
+			"task_id": {
+				Type:        "string",
+				Description: "The unique task identifier",
+			},
+			"progress": {
+				Type:        "string",
+				Description: "Progress update message or milestone",
+			},
+		},
+		Required: []string{"task_id", "progress"},
+	},
+}
+
 func (b *Bridge) ensureConnected(ctx context.Context) error {
 	b.dialMu.Lock()
 	defer b.dialMu.Unlock()
@@ -326,6 +368,8 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						agentPeerDelegateTool,
 						agentPeerTaskStatusTool,
 						agentPeerTaskCancelTool,
+						agentPeerTaskCompleteTool,
+						agentPeerTaskProgressTool,
 					},
 				},
 			})
@@ -1118,6 +1162,101 @@ func (b *Bridge) Serve(ctx context.Context) error {
 					},
 				})
 
+			}
+
+			if callParams.Name == "agent_peer_task_progress" {
+				var progressArgs struct {
+					TaskID   string `json:"task_id"`
+					Progress string `json:"progress"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &progressArgs)
+
+				if progressArgs.TaskID == "" || progressArgs.Progress == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "task_id and progress are required values"},
+							},
+						},
+					})
+					break
+				}
+
+				if err := b.session.TaskManager().UpdateProgress(progressArgs.TaskID, progressArgs.Progress); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error updating progress: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Task %s progress updated: %s", progressArgs.TaskID, progressArgs.Progress)},
+						},
+					},
+				})
+			}
+
+			if callParams.Name == "agent_peer_task_complete" {
+				var completeArgs struct {
+					TaskID    string   `json:"task_id"`
+					Result    string   `json:"result"`
+					Artifacts []string `json:"artifacts,omitempty"`
+				}
+
+				_ = json.Unmarshal(callParams.Arguments, &completeArgs)
+
+				if completeArgs.TaskID == "" || completeArgs.Result == "" {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": "task_id and result are required values"},
+							},
+						},
+					})
+					break
+				}
+
+				if err := b.session.TaskManager().Complete(completeArgs.TaskID, completeArgs.Result, completeArgs.Artifacts); err != nil {
+					b.writeResponse(StdioResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result: map[string]any{
+							"isError": true,
+							"content": []map[string]any{
+								{"type": "text", "text": fmt.Sprintf("Error completing task: %v", err)},
+							},
+						},
+					})
+					break
+				}
+
+				b.writeResponse(StdioResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"content": []map[string]any{
+							{"type": "text", "text": fmt.Sprintf("Task %s successfully marked as completed", completeArgs.TaskID)},
+						},
+					},
+				})
 			}
 
 		default:
