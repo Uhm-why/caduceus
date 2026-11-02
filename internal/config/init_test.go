@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -55,8 +56,10 @@ func TestInit(t *testing.T) {
 		if info.IsDir() {
 			t.Errorf("expected %s to be a file, got directory", p)
 		}
-		if perm := info.Mode().Perm(); perm != f.perm {
-			t.Errorf("file %s has permissions %o, want %o", f.name, perm, f.perm)
+		if runtime.GOOS != "windows" {
+			if perm := info.Mode().Perm(); perm != f.perm {
+				t.Errorf("file %s has permissions %o, want %o", f.name, perm, f.perm)
+			}
 		}
 	}
 
