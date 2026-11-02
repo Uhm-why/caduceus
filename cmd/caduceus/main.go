@@ -15,6 +15,24 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		var targetDir string
+		if len(os.Args) > 2 {
+			targetDir = os.Args[2]
+		}
+
+		if err := config.Init(targetDir); err != nil {
+			log.Fatalf("Initialization failed: %v", err)
+		}
+
+		if targetDir == "" {
+			targetDir = config.DefaultConfigDir()
+		}
+		log.Printf("Initialized Caduceus environment at %s", targetDir)
+
+		return
+	}
+
 	cfg, err := config.ParseAndLoad(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
