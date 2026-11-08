@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+// generateSerialNumber generates a cryptographically secure 128-bit random serial number
+// for X.509 certificate creation.
 func generateSerialNumber() (*big.Int, error) {
 	limit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serial, err := rand.Int(rand.Reader, limit)
@@ -24,6 +26,11 @@ func generateSerialNumber() (*big.Int, error) {
 	return serial, nil
 }
 
+// Init bootstraps a complete Caduceus environment in targetDir, creating the directory
+// structure (mailbox/tmp, new, cur; spillover), a default config.json, and generating
+// an Ed25519 root CA and leaf certificate pair for mTLS 1.3 authentication.
+// If targetDir is empty, DefaultConfigDir() is used. It returns an error if ca.key
+// already exists to prevent overwriting existing credentials.
 func Init(targetDir string) error {
 	if targetDir == "" {
 		targetDir = DefaultConfigDir()

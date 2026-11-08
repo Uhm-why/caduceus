@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// WindowAndSpill truncates text exceeding cfg.MaxLines into a head-and-tail window
+// separated by an omission marker. If cfg.EnableSpill is true, the full text is
+// saved to a file in cfg.SpilloverDir named by id.
 func WindowAndSpill(text string, id string, cfg Config) (string, error) {
 	lines := strings.Split(text, "\n")
 

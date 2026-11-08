@@ -1,3 +1,6 @@
+// Package main provides the Caduceus CLI entrypoint, a bidirectional Model Context
+// Protocol (MCP) server supporting peer-to-peer task delegation and messaging over
+// mutual TLS (mTLS 1.3) transports.
 package main
 
 import (
@@ -14,6 +17,10 @@ import (
 	"github.com/Uhm-why/caduceus/internal/peer"
 )
 
+// main is the entry point for Caduceus. It parses CLI arguments to handle the
+// "init" subcommand or load runtime configuration, initializes the local Maildir
+// mailbox and peer session, optionally starts the TLS listener, and serves the
+// stdio MCP bridge until terminated.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		var targetDir string

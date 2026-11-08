@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// Prune removes spillover context files older than maxAge from the spillover directory.
+// It returns the count of deleted files and any encountered filesystem error.
 func (c *Compactor) Prune(maxAge time.Duration) (int, error) {
 	spillDir := c.config.SpilloverDir
 	if spillDir == "" {
@@ -42,6 +44,8 @@ func (c *Compactor) Prune(maxAge time.Duration) (int, error) {
 	return prunedCount, nil
 }
 
+// DeleteSpillover deletes a specific spillover file associated with id.
+// If the file does not exist, it returns nil (idempotent deletion).
 func (c *Compactor) DeleteSpillover(id string) error {
 	spillDir := c.config.SpilloverDir
 	if spillDir == "" {

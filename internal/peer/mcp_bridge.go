@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+// Bridge exposes Caduceus peer capabilities and task tools as a Model Context
+// Protocol (MCP) server over standard I/O (stdin/stdout).
 type Bridge struct {
 	session  *Session
 	dialer   *Dialer
@@ -19,6 +21,7 @@ type Bridge struct {
 	dialMu   sync.Mutex
 }
 
+// NewBridge creates a new MCP Bridge backed by session and dialer.
 func NewBridge(s *Session, d *Dialer) *Bridge {
 	return &Bridge{
 		session: s,
@@ -26,6 +29,7 @@ func NewBridge(s *Session, d *Dialer) *Bridge {
 	}
 }
 
+// StdioRequest represents an incoming MCP JSON-RPC request read from stdin.
 type StdioRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      any             `json:"id,omitempty"`
@@ -33,6 +37,7 @@ type StdioRequest struct {
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
+// StdioResponse represents an outgoing MCP JSON-RPC response written to stdout.
 type StdioResponse struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      any    `json:"id,omitempty"`
@@ -54,32 +59,38 @@ func (b *Bridge) writeResponse(resp any) error {
 	return nil
 }
 
+// PropertyDefinition defines a property in an MCP tool input schema.
 type PropertyDefinition struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
 }
 
+// ToolInputSchema describes the JSON schema required for invoking an MCP tool.
 type ToolInputSchema struct {
 	Type       string                        `json:"type"`
 	Properties map[string]PropertyDefinition `json:"properties"`
 	Required   []string                      `json:"required,omitempty"`
 }
 
+// ToolDescriptor defines an MCP tool advertised to the client.
 type ToolDescriptor struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema ToolInputSchema `json:"inputSchema"`
 }
 
+// ServerInfo identifies the MCP server implementation and version.
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
 
+// ServerCapes advertises supported MCP server capabilities.
 type ServerCapes struct {
 	Tools map[string]any `json:"tools"`
 }
 
+// ServerMetaData contains protocol version and capabilities returned during MCP initialization.
 type ServerMetaData struct {
 	ProtocolVersion   string      `json:"protocolVersion"`
 	Capabilities      ServerCapes `json:"capabilities"`
@@ -320,6 +331,8 @@ func (b *Bridge) ensureConnected(ctx context.Context) error {
 
 }
 
+// Serve reads newline-delimited MCP JSON-RPC requests from standard input and
+// writes responses to standard output until EOF is reached or ctx is canceled.
 func (b *Bridge) Serve(ctx context.Context) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 10485760)

@@ -18,6 +18,8 @@ import (
 	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
 
+// Session manages the state machine, heartbeat monitor, wire framing,
+// request-response dispatch, and task lifecycle for a peer connection.
 type Session struct {
 	config     *config.Config
 	state      ServerState
@@ -37,9 +39,14 @@ type Session struct {
 	compactor  *compactor.Compactor
 }
 
+// ErrSessionActive indicates that a connection cannot be attached because the session is already active.
 var ErrSessionActive = errors.New("session already active")
+
+// ErrMarshalling indicates an error occurred while marshaling JSON.
 var ErrMarshalling = errors.New("error marshaling json")
 
+// NewSession constructs an idle Session initialized with cfg, mb, default capabilities,
+// a TaskManager, and a Compactor.
 func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 	taskMgr := NewTaskManager(mb)
 	comp := compactor.New(cfg.Compactor)
@@ -57,6 +64,7 @@ func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 	}
 }
 
+// State returns the current ServerState of the session.
 func (s *Session) State() ServerState {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
@@ -65,6 +73,7 @@ func (s *Session) State() ServerState {
 
 }
 
+// RemoteCapabilities returns the capabilities negotiated with the peer, or nil if unnegotiated.
 func (s *Session) RemoteCapabilities() *Capabilities {
 	s.capsMu.RLock()
 	defer s.capsMu.RUnlock()
@@ -72,6 +81,7 @@ func (s *Session) RemoteCapabilities() *Capabilities {
 	return s.remoteCaps
 }
 
+// HasRemoteFeature reports whether the peer advertised support for the specified feature.
 func (s *Session) HasRemoteFeature(feature string) bool {
 	s.capsMu.RLock()
 	defer s.capsMu.RUnlock()
@@ -83,10 +93,12 @@ func (s *Session) HasRemoteFeature(feature string) bool {
 	return false
 }
 
+// TaskManager returns the TaskManager instance associated with this session.
 func (s *Session) TaskManager() TaskManager {
 	return s.tasks
 }
 
+// Compactor returns the Compactor instance used for context reduction.
 func (s *Session) Compactor() *compactor.Compactor {
 	return s.compactor
 }
@@ -110,6 +122,9 @@ func (s *Session) validatePeerCapabilities(remote *Capabilities) error {
 	return nil
 }
 
+// PerformHandshake sends local capabilities to the peer via "caduceus/handshake",
+// verifies the peer's returned capabilities, sets session state to StateActive,
+// and starts the background heartbeat loop.
 func (s *Session) PerformHandshake(ctx context.Context) error {
 	s.stateMu.RLock()
 	var currentState = s.state
@@ -165,6 +180,8 @@ func (s *Session) PerformHandshake(ctx context.Context) error {
 	return nil
 }
 
+// Attach binds an active TLS connection to the session, transitioning to StateHandshake
+// and launching the background reader loop.
 func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
@@ -249,6 +266,8 @@ func (s *Session) sendSuccessResponse(id uint64, result any) error {
 	return s.writeFrame(payload)
 }
 
+// SendRequest transmits a JSON-RPC request to the peer and blocks until a response is received,
+// the provided context is canceled, or the session terminates.
 func (s *Session) SendRequest(ctx context.Context, method string, params []byte) ([]byte, error) {
 	id := s.nextID.Add(1)
 
@@ -294,6 +313,7 @@ func (s *Session) SendRequest(ctx context.Context, method string, params []byte)
 
 }
 
+// DispatchTask sends an "agent/task/dispatch" request to delegate a task to the peer agent.
 func (s *Session) DispatchTask(ctx context.Context, req TaskDispatchRequest) (*TaskDispatchResponse, error) {
 	params, err := json.Marshal(req)
 	if err != nil {
@@ -322,6 +342,8 @@ func (s *Session) DispatchTask(ctx context.Context, req TaskDispatchRequest) (*T
 	return &dispatchRes, nil
 }
 
+// QueryTaskStatus sends an "agent/task/status" request to query progress, state, and results
+// of a task executing on the peer.
 func (s *Session) QueryTaskStatus(ctx context.Context, taskID string) (*TaskStatusResponse, error) {
 	req := &TaskStatusRequest{TaskID: taskID}
 	params, err := json.Marshal(req)
@@ -352,6 +374,7 @@ func (s *Session) QueryTaskStatus(ctx context.Context, taskID string) (*TaskStat
 	return &statusRes, nil
 }
 
+// CancelTask sends an "agent/task/cancel" request to terminate an active task on the peer.
 func (s *Session) CancelTask(ctx context.Context, taskID string, reason string) (*TaskCancelResponse, error) {
 	req := &TaskCancelRequest{
 		TaskID: taskID,
@@ -386,6 +409,7 @@ func (s *Session) CancelTask(ctx context.Context, taskID string, reason string) 
 	return &cancelRes, nil
 }
 
+// DrainInbox retrieves and removes all pending unread messages from the local Mailbox.
 func (s *Session) DrainInbox() ([]mailbox.Message, error) {
 	return s.mailbox.Drain()
 }
@@ -646,6 +670,8 @@ func (s *Session) heartbeatLoop() {
 	}
 }
 
+// Close cleanly terminates the session, closing the network connection,
+// canceling the background context, and releasing pending response wait channels.
 func (s *Session) Close() error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()

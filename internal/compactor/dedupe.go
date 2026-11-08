@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+// CollapseRepeatedLines consolidates consecutive identical lines into a single line
+// followed by a count marker "[repeated N times]".
 func CollapseRepeatedLines(input string) string {
 	if input == "" {
 		return ""

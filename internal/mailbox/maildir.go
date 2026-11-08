@@ -15,6 +15,8 @@ import (
 
 var _ Mailbox = (*Maildir)(nil)
 
+// Maildir implements Mailbox using a standard Maildir filesystem layout
+// (tmp/, new/, cur/) to provide crash-safe, atomic message persistence.
 type Maildir struct {
 	rootDir string
 	tmpDir  string
@@ -24,6 +26,8 @@ type Maildir struct {
 	counter atomic.Uint64
 }
 
+// New initializes a Maildir directory structure at path with tmp, new, and cur
+// subdirectories (mode 0700), returning an active *Maildir instance.
 func New(path string) (*Maildir, error) {
 	if path == "" {
 		return nil, errors.New("mailbox path cannot be empty")
@@ -63,11 +67,15 @@ func New(path string) (*Maildir, error) {
 	}, nil
 }
 
+// generateFilename constructs a collision-free filename using timestamp nanoseconds,
+// the current process ID, and a monotonic atomic sequence number.
 func (md *Maildir) generateFilename() string {
 	seq := md.counter.Add(1)
 	return fmt.Sprintf("%d_%d_%d.json", time.Now().UTC().UnixNano(), os.Getpid(), seq)
 }
 
+// Enqueue serializes msg to JSON, writes it into tmp/ with fsync durability,
+// and moves it to new/ via an atomic filesystem rename.
 func (md *Maildir) Enqueue(msg Message) error {
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
@@ -112,6 +120,8 @@ func (md *Maildir) Enqueue(msg Message) error {
 
 }
 
+// Drain reads, unmarshals, and removes all pending messages from new/, returning
+// them sorted by filename timestamp order.
 func (md *Maildir) Drain() ([]Message, error) {
 	md.mu.Lock()
 	defer md.mu.Unlock()

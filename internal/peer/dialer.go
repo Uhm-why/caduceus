@@ -9,16 +9,19 @@ import (
 	"github.com/Uhm-why/caduceus/internal/config"
 )
 
+// Dialer establishes outbound mTLS 1.3 connections to a configured peer.
 type Dialer struct {
 	config *config.Config
 }
 
+// NewDialer constructs a Dialer configured with cfg.
 func NewDialer(cfg *config.Config) *Dialer {
 	return &Dialer{
 		config: cfg,
 	}
 }
 
+// Dial initiates a TLS connection to cfg.PeerAddress within the configured DialTimeout.
 func (d *Dialer) Dial(ctx context.Context) (*tls.Conn, error) {
 	intCtx, cancel := context.WithTimeout(ctx, d.config.DialTimeout)
 

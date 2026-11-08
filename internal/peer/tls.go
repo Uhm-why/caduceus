@@ -10,8 +10,10 @@ import (
 	"github.com/Uhm-why/caduceus/internal/config"
 )
 
+// ErrInvalidPEMFormat indicates that certificate PEM data could not be parsed.
 var ErrInvalidPEMFormat = errors.New("invalid PEM format")
 
+// loadCertificates reads the X.509 keypair and CA certificate pool from the paths in cfg.
 func loadCertificates(cfg *config.Config) (tls.Certificate, *x509.CertPool, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.TLSCertPath, cfg.TLSKeyPath)
 	if err != nil {
@@ -31,7 +33,8 @@ func loadCertificates(cfg *config.Config) (tls.Certificate, *x509.CertPool, erro
 	return cert, pool, nil
 }
 
-// TLSServerConfig builds a TLS 1.3 configuration requiring client mutual TLS authentication.
+// TLSServerConfig builds a TLS 1.3 configuration requiring mutual TLS (mTLS) client
+// certificate authentication against the shared CA certificate pool.
 func TLSServerConfig(cfg *config.Config) (*tls.Config, error) {
 	cert, pool, err := loadCertificates(cfg)
 	if err != nil {
@@ -48,7 +51,8 @@ func TLSServerConfig(cfg *config.Config) (*tls.Config, error) {
 	return &tlsConfig, nil
 }
 
-// TLSClientConfig builds a TLS 1.3 client configuration verifying the peer certificate against the CA pool and SAN.
+// TLSClientConfig builds a TLS 1.3 client configuration that presents the local leaf certificate
+// and verifies the peer certificate against the shared CA pool and expected Subject Alternative Name (SAN).
 func TLSClientConfig(cfg *config.Config) (*tls.Config, error) {
 	cert, pool, err := loadCertificates(cfg)
 	if err != nil {

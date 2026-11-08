@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 )
 
+// ResolveConfigFile determines the config.json path and base directory from customPath
+// or standard user configuration paths, returning the file path, base directory, and
+// whether the file exists on disk.
 func ResolveConfigFile(customPath string) (filePath string, baseDir string, found bool) {
 	if customPath != "" {
 		info, err := os.Stat(customPath)
@@ -51,6 +54,8 @@ func ResolveConfigFile(customPath string) (filePath string, baseDir string, foun
 	return "", DefaultConfigDir(), false
 }
 
+// LoadFile reads and unmarshals config.json from path, overlaying defined JSON values
+// onto cfg.
 func LoadFile(path string, cfg *Config) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

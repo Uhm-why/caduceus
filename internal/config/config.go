@@ -1,3 +1,5 @@
+// Package config manages configuration resolution, file-based loading, CLI flag
+// parsing, environment validation, and cryptographic initialization for Caduceus.
 package config
 
 import (
@@ -13,8 +15,11 @@ import (
 	"github.com/Uhm-why/caduceus/internal/compactor"
 )
 
+// Duration wraps time.Duration to enable JSON string marshaling and unmarshaling
+// using standard Go duration formats (e.g., "5s", "1m").
 type Duration time.Duration
 
+// UnmarshalJSON parses a JSON string duration representation into Duration.
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var duration string
 	if err := json.Unmarshal(b, &duration); err != nil {
@@ -32,6 +37,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 }
 
+// MarshalJSON serializes Duration to a quoted string format.
 func (d Duration) MarshalJSON() ([]byte, error) {
 	casted := time.Duration(d).String()
 
@@ -40,12 +46,14 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return jsonified, err
 }
 
+// Duration unwraps Duration into a standard time.Duration.
 func (d Duration) Duration() time.Duration {
 	duration := time.Duration(d)
 
 	return duration
 }
 
+// fileCompactorConfig maps JSON fields from config.json to compactor.Config.
 type fileCompactorConfig struct {
 	MaxLines     *int    `json:"max_lines"`
 	HeadLines    *int    `json:"head_lines"`
@@ -54,25 +62,40 @@ type fileCompactorConfig struct {
 	EnableSpill  *bool   `json:"enable_spill"`
 }
 
+// Config defines the complete runtime configuration for a Caduceus node.
 type Config struct {
+	// ListenAddress is the TCP address to bind for incoming peer connections (e.g., ":8443").
 	ListenAddress string
-	PeerAddress   string
+	// PeerAddress is the remote peer host:port dialed in client mode.
+	PeerAddress string
 
+	// TLSCertPath is the file path to the node's TLS certificate PEM.
 	TLSCertPath string
-	TLSKeyPath  string
-	CAPath      string
-	PeerSAN     string
+	// TLSKeyPath is the file path to the node's TLS private key PEM.
+	TLSKeyPath string
+	// CAPath is the file path to the shared Certificate Authority PEM.
+	CAPath string
+	// PeerSAN is the expected Subject Alternative Name (SAN) for peer validation.
+	PeerSAN string
+	// MailboxPath is the directory path for the node's Maildir spool.
 	MailboxPath string
 
+	// HandshakeTimeout is the maximum duration allowed to complete capability negotiation.
 	HandshakeTimeout time.Duration
-	DialTimeout      time.Duration
-	IdleTimeout      time.Duration
-	KeepAlive        time.Duration
+	// DialTimeout is the maximum duration allowed for outbound TCP dials.
+	DialTimeout time.Duration
+	// IdleTimeout is the duration after which an inactive connection is closed.
+	IdleTimeout time.Duration
+	// KeepAlive is the interval between TCP keepalive probes.
+	KeepAlive time.Duration
 
+	// MaxFrameSize is the maximum permitted size in bytes for a JSON-RPC wire frame.
 	MaxFrameSize int
-	Compactor    compactor.Config
+	// Compactor contains settings for context reduction and disk spillover.
+	Compactor compactor.Config
 }
 
+// fileConfig takes the Config and applies JSON tags for marshaling and unmarshaling config.json.
 type fileConfig struct {
 	ListenAddress *string `json:"listen_address"`
 	PeerAddress   *string `json:"peer_address"`
@@ -92,6 +115,7 @@ type fileConfig struct {
 	Compactor    *fileCompactorConfig `json:"compactor"`
 }
 
+// DefaultConfigDir returns the default OS-specific configuration directory.
 func DefaultConfigDir() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -102,6 +126,9 @@ func DefaultConfigDir() string {
 	return filepath.Join(configDir, "caduceus")
 }
 
+// DefaultConfig returns a Config initialized with sensible hardcoded defaults:
+// zero network addresses, default config directory TLS/mailbox paths, standard timeouts,
+// 10MB maximum frame size, and default compactor settings.
 func DefaultConfig() *Config {
 	baseDir := DefaultConfigDir()
 	compactorCfg := compactor.DefaultConfig()
@@ -127,6 +154,7 @@ func DefaultConfig() *Config {
 	}
 }
 
+// Common configuration errors returned during validation.
 var (
 	ErrMissingNetworkMode    = errors.New("at least one of ListenAddress or PeerAddress must be configured")
 	ErrMissingCertPath       = errors.New("missing CertPath")
@@ -141,6 +169,8 @@ var (
 	ErrMissingSpilloverDir   = errors.New("missing compactor spillover dir when spillover is enabled")
 )
 
+// Validate checks that required fields are populated, timeouts and line constraints
+// are strictly positive, and spillover configuration is consistent.
 func (c Config) Validate() error {
 	if c.ListenAddress == "" && c.PeerAddress == "" {
 		return fmt.Errorf("validation error: %w", ErrMissingNetworkMode)
@@ -209,6 +239,10 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// ParseAndLoad parses command-line flags and merges configuration sources following
+// strict precedence: CLI Flags > config.json > Hardcoded Defaults.
+// It resolves relative directory paths, validates configuration invariants, and
+// returns the resulting *Config.
 func ParseAndLoad(args []string) (*Config, error) {
 	flags := flag.NewFlagSet("caduceus", flag.ContinueOnError)
 	listenFlag := flags.String("listen", "", "Address to bind for incoming peer connections (e.g. :8443).")

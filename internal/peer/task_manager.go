@@ -10,16 +10,26 @@ import (
 	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
 
+// TaskManager defines the interface for creating, updating, and querying delegated tasks.
 type TaskManager interface {
+	// Dispatch accepts a new task and registers its cancellation handle.
 	Dispatch(req TaskDispatchRequest, cancelFn context.CancelFunc) (*TaskDispatchResponse, error)
+	// Get retrieves a task by its unique identifier.
 	Get(taskID string) (*Task, bool)
+	// UpdateProgress updates the progress description of an in-flight task.
 	UpdateProgress(taskID string, progress string) error
+	// Complete marks a task as successfully finished with result text and artifact paths.
 	Complete(taskID string, result string, artifacts []string) error
+	// Fail records that a task encountered an unrecoverable failure.
 	Fail(taskID string, failureErr error) error
+	// Cancel requests termination of an active task.
 	Cancel(taskID string, reason string) (*TaskCancelResponse, error)
+	// ListActive returns all tasks currently in Queued or Running state.
 	ListActive() []*Task
 }
 
+// DefaultTaskManager provides a thread-safe in-memory implementation of TaskManager
+// that publishes task lifecycle events to a Mailbox.
 type DefaultTaskManager struct {
 	tasks     map[string]*Task
 	mu        sync.RWMutex
@@ -27,6 +37,7 @@ type DefaultTaskManager struct {
 	compactor *compactor.Compactor
 }
 
+// NewTaskManager constructs a DefaultTaskManager using mb for event notification persistence.
 func NewTaskManager(mb mailbox.Mailbox) *DefaultTaskManager {
 	return &DefaultTaskManager{
 		tasks:   make(map[string]*Task),
@@ -34,10 +45,12 @@ func NewTaskManager(mb mailbox.Mailbox) *DefaultTaskManager {
 	}
 }
 
+// SetCompactor attaches a context Compactor to reduce large result payloads upon task completion.
 func (tm *DefaultTaskManager) SetCompactor(c *compactor.Compactor) {
 	tm.compactor = c
 }
 
+// Dispatch registers a new task, stores its cancellation callback, and records a dispatch event.
 func (tm *DefaultTaskManager) Dispatch(req TaskDispatchRequest, cancelFn context.CancelFunc) (*TaskDispatchResponse, error) {
 	tm.mu.Lock()
 	if _, exists := tm.tasks[req.TaskID]; exists {
@@ -78,6 +91,7 @@ func (tm *DefaultTaskManager) Dispatch(req TaskDispatchRequest, cancelFn context
 	}, nil
 }
 
+// Get returns the task corresponding to taskID, or false if not found.
 func (tm *DefaultTaskManager) Get(taskID string) (*Task, bool) {
 	tm.mu.RLock()
 	task, ok := tm.tasks[taskID]
@@ -85,6 +99,7 @@ func (tm *DefaultTaskManager) Get(taskID string) (*Task, bool) {
 	return task, ok
 }
 
+// UpdateProgress updates the progress text of an active task.
 func (tm *DefaultTaskManager) UpdateProgress(taskID string, progress string) error {
 	task, ok := tm.Get(taskID)
 	if !ok {
@@ -98,6 +113,8 @@ func (tm *DefaultTaskManager) UpdateProgress(taskID string, progress string) err
 	return nil
 }
 
+// Complete sets the task state to Completed, compacts the result if configured,
+// and publishes a task_result message to the mailbox.
 func (tm *DefaultTaskManager) Complete(taskID string, result string, artifacts []string) error {
 	task, ok := tm.Get(taskID)
 	if !ok {
@@ -130,6 +147,7 @@ func (tm *DefaultTaskManager) Complete(taskID string, result string, artifacts [
 	return nil
 }
 
+// Fail marks the task as Failed with failureErr, recording a task_error in the mailbox.
 func (tm *DefaultTaskManager) Fail(taskID string, failureErr error) error {
 	task, ok := tm.Get(taskID)
 	if !ok {
@@ -153,6 +171,7 @@ func (tm *DefaultTaskManager) Fail(taskID string, failureErr error) error {
 	return nil
 }
 
+// Cancel terminates an active task using its cancel function and transitions its state to Aborted.
 func (tm *DefaultTaskManager) Cancel(taskID string, reason string) (*TaskCancelResponse, error) {
 	task, ok := tm.Get(taskID)
 	if !ok {
@@ -194,6 +213,7 @@ func (tm *DefaultTaskManager) Cancel(taskID string, reason string) (*TaskCancelR
 	}, nil
 }
 
+// ListActive returns all tasks currently in Queued or Running state.
 func (tm *DefaultTaskManager) ListActive() []*Task {
 	tm.mu.RLock()
 	var active []*Task

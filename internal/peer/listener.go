@@ -10,17 +10,21 @@ import (
 	"github.com/Uhm-why/caduceus/internal/config"
 )
 
+// Listener listens for and accepts inbound mTLS 1.3 connections from peers.
 type Listener struct {
 	config   *config.Config
 	listener net.Listener
 }
 
+// NewListener constructs a Listener using the configuration in cfg.
 func NewListener(cfg *config.Config) *Listener {
 	return &Listener{
 		config: cfg,
 	}
 }
 
+// Start binds the TCP listener on cfg.ListenAddress, initializes TLS mutual authentication,
+// and starts an accept loop. It returns channels for accepted TLS connections and listener errors.
 func (l *Listener) Start(ctx context.Context) (<-chan *tls.Conn, <-chan error, error) {
 	tlsCfg, err := TLSServerConfig(l.config)
 	if err != nil {
@@ -47,6 +51,8 @@ func (l *Listener) Start(ctx context.Context) (<-chan *tls.Conn, <-chan error, e
 	return connChan, errChan, nil
 }
 
+// acceptLoop handles accepting inbound TCP connections, enforcing handshake timeouts,
+// and publishing authenticated *tls.Conn instances to connChan.
 func (l *Listener) acceptLoop(ctx context.Context, connChan chan<- *tls.Conn, errChan chan<- error) {
 	defer close(connChan)
 	for {
