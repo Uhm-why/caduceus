@@ -10,8 +10,56 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Code Formatting Check
+        run: |
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "The following files require gofmt -s -w:"
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  vulncheck:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: 'go.mod'
+          go-package: ./...
+
   test:
-    name: Build & Test ((${{ matrix.os }}))
+    name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,22 +68,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
-      - name: Code Formatting Check (Linux Only)
-        if: runner.os == 'Linux'
-        run: |
-            if [ -n "$(gofmt -s -l .)" ]; then
-              echo "The following files require gofmt -s -w:"
-              gofmt -s -l .
-              exit 1
-            fi
-      - name: Go Vet
-        run: go vet ./...
+
       - name: Run Tests (-race)
         run: go test -v -race -count=1 ./...
+
       - name: Build Binary
         run: go build -v ./cmd/caduceus
