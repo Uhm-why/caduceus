@@ -1,0 +1,39 @@
+version: "2"
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - errcheck
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - text: ".*Close.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*Remove.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*Set.*Deadline.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*Stdout.Write.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*writeResponse.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*writeFrame.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*Enqueue.*is not checked"
+        linters:
+          - errcheck

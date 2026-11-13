@@ -433,7 +433,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 						Result: map[string]any{
 							"isError": true,
 							"content": []map[string]any{
-								{"type": "text", "text": fmt.Sprintf("Peer does not support the 'messaging' capability")},
+								{"type": "text", "text": "Peer does not support the 'messaging' capability"},
 							},
 						},
 					})
@@ -649,7 +649,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 				if inboundArgs.Context != "" {
 					peerSessionInbound.Message = fmt.Sprintf("%s\n%s", inboundArgs.Query, inboundArgs.Context)
 				} else {
-					peerSessionInbound.Message = fmt.Sprintf("%s", inboundArgs.Query)
+					peerSessionInbound.Message = inboundArgs.Query
 				}
 
 				payloadBytes, err := json.Marshal(peerSessionInbound)
@@ -754,7 +754,7 @@ func (b *Bridge) Serve(ctx context.Context) error {
 				if inboundArgs.Rubric != "" {
 					peerSessionInbound.Message = fmt.Sprintf("%s\n\nRubric:\n%s", inboundArgs.Artifact, inboundArgs.Rubric)
 				} else {
-					peerSessionInbound.Message = fmt.Sprintf("%s", inboundArgs.Artifact)
+					peerSessionInbound.Message = inboundArgs.Artifact
 				}
 
 				payloadBytes, err := json.Marshal(peerSessionInbound)
