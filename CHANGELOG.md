@@ -6,9 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0) a
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
 ### Added
 
-- Automated trust management (`caduceus trust add`)
+- Automated Trust Management engine (`internal/trust`) supporting PEM CA bundle loading, X.509 validation, SHA-256 fingerprinting, duplicate detection, and atomic file commits.
+- Local Root CA protection preventing accidental removal of the local node's root CA.
+- CLI trust management subcommands (`caduceus trust list`, `caduceus trust add <cert.pem>`, and `caduceus trust remove <fingerprint>`).
+- Comprehensive unit test suite for trust lifecycle management under concurrency race detection (`internal/trust/trust_test.go`).
+
+### Changed
+
+- Modernized filesystem error checking across the codebase from legacy `os.IsNotExist` to `errors.Is(err, os.ErrNotExist)`.
 
 ## [0.1.0] - 2026-11-02
 

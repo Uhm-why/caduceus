@@ -53,12 +53,24 @@ The following tools are provided by the MCP server:
 
 # Multi-Node Trust Setup
 When pairing two machines (e.g. a laptop and a Raspberry Pi):
-1. Run `./caduceus init` on each node.
-2. Append each node's ca.pem to the other's ~/.config/caduceus/ca.pem .
+1. Run `./caduceus init` on each node to bootstrap local credentials.
+2. Copy each node's public `ca.pem` to the other node.
+3. Import the peer's root CA into the local trust bundle:
+```bash
+./caduceus trust add /path/to/peer-ca.pem
+```
+4. Verify trusted certificates and fingerprints:
+```bash
+./caduceus trust list
+```
+
+To revoke a peer's trust at any time without affecting your local root CA:
+```bash
+./caduceus trust remove <fingerprint>
+```
 
 Both nodes will now mutually authenticate over mTLS 1.3.
 
 # Roadmap
 - Greylist Execution Security: Out-of-band one-time verification tokens for sensitive/elevated tool execution.
-- Automated Trust Management: `caduceus trust add` CLI helper for federating node CAs without manual file edits.
 - Stream Compression: Optional wire-level stream compression over mTLS framing.
