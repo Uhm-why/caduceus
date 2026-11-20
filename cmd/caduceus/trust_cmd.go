@@ -23,7 +23,7 @@ func runTrustList(args []string) {
 	fs := flag.NewFlagSet("trust list", flag.ExitOnError)
 	caPath := fs.String("ca", defaultCAPath, "Path to CA bundle")
 	keyPath := fs.String("key", defaultKeyPath, "Path to local CA private key")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	trustedCerts, err := trust.LoadCertificates(*caPath, *keyPath)
 	if err != nil {
@@ -46,7 +46,7 @@ func runTrustList(args []string) {
 func runTrustAdd(args []string) {
 	fs := flag.NewFlagSet("trust add", flag.ExitOnError)
 	caPath := fs.String("ca", defaultCAPath, "Path to CA bundle")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if fs.NArg() < 1 {
 		fmt.Fprintf(os.Stderr, "Path to certificate file is required\n")
@@ -75,7 +75,7 @@ func runTrustRemove(args []string) {
 	fs := flag.NewFlagSet("trust remove", flag.ExitOnError)
 	caPath := fs.String("ca", defaultCAPath, "Path to CA bundle")
 	keyPath := fs.String("key", defaultKeyPath, "Path to CA private key")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if fs.NArg() < 1 {
 		fmt.Fprintf(os.Stderr, "Fingerprint of certificate to be removed is required\n")
