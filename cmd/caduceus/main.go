@@ -17,10 +17,10 @@ import (
 	"github.com/Uhm-why/caduceus/internal/peer"
 )
 
-// main is the entry point for Caduceus. It parses CLI arguments to handle the
-// "init" subcommand or load runtime configuration, initializes the local Maildir
-// mailbox and peer session, optionally starts the TLS listener, and serves the
-// stdio MCP bridge until terminated.
+// main is the entry point for Caduceus. It parses CLI arguments to dispatch the
+// "init" and "trust" subcommands or load runtime configuration, initializes the
+// local Maildir mailbox and peer session, optionally starts the TLS listener, and
+// serves the stdio MCP bridge until terminated.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		var targetDir string
@@ -37,6 +37,10 @@ func main() {
 		}
 		log.Printf("Initialized Caduceus environment at %s", targetDir)
 
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "trust" {
+		runTrust(os.Args[2:])
 		return
 	}
 
