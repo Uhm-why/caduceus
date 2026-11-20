@@ -1,6 +1,7 @@
 package compactor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -291,7 +292,7 @@ func TestCompactor_PruneAndDelete(t *testing.T) {
 	}
 
 	// Verify old file was removed
-	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(oldPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected old file to be deleted from disk")
 	}
 
@@ -307,7 +308,7 @@ func TestCompactor_PruneAndDelete(t *testing.T) {
 	if err := c.DeleteSpillover("task-new"); err != nil {
 		t.Fatalf("unexpected error deleting spillover: %v", err)
 	}
-	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(newPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected new file to be deleted via DeleteSpillover")
 	}
 

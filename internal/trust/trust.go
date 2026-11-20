@@ -98,7 +98,7 @@ func LoadCertificates(caPath, keyPath string) ([]TrustedCert, error) {
 
 	pemBytes, err := os.ReadFile(caPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return make([]TrustedCert, 0), nil
 		}
 		return nil, err
@@ -191,7 +191,7 @@ func AddCertificate(caPath string, certPEM []byte) (*TrustedCert, error) {
 
 	readCerts, err := os.ReadFile(caPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			readCerts = make([]byte, 0)
 		} else {
 			return nil, err
@@ -259,7 +259,7 @@ func RemoveCertificate(caPath, keyPath, fingerprint string) error {
 	}
 
 	_, err := os.Stat(keyPath)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("provided key does not exist")
 	}
 

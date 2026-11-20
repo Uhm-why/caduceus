@@ -73,7 +73,7 @@ func Init(targetDir string) error {
 		return err
 	}
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
 
 		defaultJSON := `{
 		"listen_address": ":8443",

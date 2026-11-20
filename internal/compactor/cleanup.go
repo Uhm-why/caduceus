@@ -1,6 +1,7 @@
 package compactor
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ func (c *Compactor) Prune(maxAge time.Duration) (int, error) {
 		spillDir = filepath.Join(home, ".config", "caduceus", "spillover")
 	}
 
-	if _, err := os.Stat(spillDir); os.IsNotExist(err) {
+	if _, err := os.Stat(spillDir); errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
 
@@ -58,7 +59,7 @@ func (c *Compactor) DeleteSpillover(id string) error {
 	target := filepath.Join(spillDir, safeID+".txt")
 
 	err := os.Remove(target)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
