@@ -152,13 +152,14 @@ type PolicyRule struct {
 
 // PendingAuth holds information about a task authorization request currently awaiting settlement.
 type PendingAuth struct {
-	TaskID    string
-	PeerSAN   string
-	Objective string
-	Token     string
-	State     AuthState
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	TaskID         string
+	PeerSAN        string
+	Objective      string
+	Token          string
+	State          AuthState
+	FailedAttempts int
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 // Policy represents an evaluation ruleset and default fallback action guarded by a read-write mutex.

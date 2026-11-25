@@ -142,6 +142,41 @@ func TestVerifyLifecycle(t *testing.T) {
 	}
 }
 
+func TestVerifyLockout(t *testing.T) {
+	mgr := NewAuthManager(nil, time.Minute)
+	auth, err := mgr.CreatePending("task-lockout", "peer1", "exec", time.Minute)
+	if err != nil {
+		t.Fatalf("failed to create pending: %v", err)
+	}
+
+	// Strike 1
+	_ = mgr.Verify("task-lockout", "wrong-1")
+	cur, _ := mgr.Get("task-lockout")
+	if cur.State != AuthStatePending || cur.FailedAttempts != 1 {
+		t.Errorf("expected 1 failed attempt, pending state; got %d, %v", cur.FailedAttempts, cur.State)
+	}
+
+	// Strike 2
+	_ = mgr.Verify("task-lockout", "wrong-2")
+	cur, _ = mgr.Get("task-lockout")
+	if cur.State != AuthStatePending || cur.FailedAttempts != 2 {
+		t.Errorf("expected 2 failed attempts, pending state; got %d, %v", cur.FailedAttempts, cur.State)
+	}
+
+	// Strike 3 - Lockout!
+	_ = mgr.Verify("task-lockout", "wrong-3")
+	cur, _ = mgr.Get("task-lockout")
+	if cur.State != AuthStateDenied || cur.FailedAttempts != 3 {
+		t.Errorf("expected 3 failed attempts and AuthStateDenied lockout; got %d, %v", cur.FailedAttempts, cur.State)
+	}
+
+	// Even correct token must be rejected now because task is locked out / settled
+	err = mgr.Verify("task-lockout", auth.Token)
+	if !errors.Is(err, ErrAuthAlreadySettled) {
+		t.Errorf("expected ErrAuthAlreadySettled on locked-out task, got %v", err)
+	}
+}
+
 func TestVerifyExpiration(t *testing.T) {
 	mgr := NewAuthManager(nil, time.Millisecond)
 

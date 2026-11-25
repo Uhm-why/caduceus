@@ -128,6 +128,10 @@ func (m *DefaultAuthManager) Verify(taskID string, token string) error {
 	}
 
 	if subtle.ConstantTimeCompare([]byte(auth.Token), []byte(token)) == 0 {
+		auth.FailedAttempts++
+		if auth.FailedAttempts >= 3 {
+			auth.State = AuthStateDenied
+		}
 		return ErrAuthInvalidToken
 	}
 
