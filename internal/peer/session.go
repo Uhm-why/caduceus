@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Uhm-why/caduceus/internal/auth"
 	"github.com/Uhm-why/caduceus/internal/compactor"
 	"github.com/Uhm-why/caduceus/internal/config"
 	"github.com/Uhm-why/caduceus/internal/mailbox"
@@ -37,6 +38,8 @@ type Session struct {
 	capsMu     sync.RWMutex
 	tasks      TaskManager
 	compactor  *compactor.Compactor
+	auth       auth.AuthManager
+	remoteSAN  string
 }
 
 // ErrSessionActive indicates that a connection cannot be attached because the session is already active.
@@ -51,6 +54,7 @@ func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 	taskMgr := NewTaskManager(mb)
 	comp := compactor.New(cfg.Compactor)
 	taskMgr.SetCompactor(comp)
+	authMgr := auth.NewAuthManager(nil, 5*time.Minute)
 
 	return &Session{
 		config:     cfg,
@@ -61,7 +65,16 @@ func NewSession(cfg *config.Config, mb mailbox.Mailbox) *Session {
 		remoteCaps: nil,
 		tasks:      taskMgr,
 		compactor:  comp,
+		auth:       authMgr,
 	}
+}
+
+func (s *Session) SetAuthManager(mgr auth.AuthManager) {
+	s.auth = mgr
+}
+
+func (s *Session) AuthManager() auth.AuthManager {
+	return s.auth
 }
 
 // State returns the current ServerState of the session.
@@ -194,6 +207,16 @@ func (s *Session) Attach(parentCtx context.Context, conn *tls.Conn) error {
 	s.state = StateHandshake
 
 	s.conn = conn
+
+	connState := conn.ConnectionState()
+	if len(connState.PeerCertificates) > 0 {
+		cert := connState.PeerCertificates[0]
+		if len(cert.DNSNames) > 0 {
+			s.remoteSAN = cert.DNSNames[0]
+		} else {
+			s.remoteSAN = cert.Subject.CommonName
+		}
+	}
 
 	ctx, cancel := context.WithCancel(parentCtx)
 
@@ -573,6 +596,50 @@ func (s *Session) readLoop() {
 				if err := json.Unmarshal(envelope.Params, &req); err != nil {
 					_ = s.sendErrorResponse(envelope.ID, -32602, "error unmarshaling dispatch envelope params")
 					continue
+				}
+
+				if s.auth != nil {
+					decision := s.auth.Evaluate(req.Objective)
+
+					switch decision {
+					case auth.PolicyDeny:
+						_ = s.sendSuccessResponse(envelope.ID, &TaskDispatchResponse{
+							TaskID:   req.TaskID,
+							Accepted: false,
+							Reason:   "action denied by policy",
+						})
+						continue
+
+					case auth.PolicyGreylist:
+						ttl := time.Duration(req.TimeoutSec) * time.Second
+						pending, err := s.auth.CreatePending(req.TaskID, s.remoteSAN, req.Objective, ttl)
+						if err != nil {
+							_ = s.sendErrorResponse(envelope.ID, -32000, "authorization error: "+err.Error())
+							continue
+						}
+
+						if s.mailbox != nil {
+							s.mailbox.Enqueue(mailbox.Message{
+								Kind:          "auth_challenge",
+								CorrelationID: req.TaskID,
+								Content:       fmt.Sprintf("peer %s requested greylisted action %q; authorization pending", s.remoteSAN, req.Objective),
+								Timestamp:     time.Now().UTC(),
+							})
+						}
+
+						log.Printf("[SECURITY] Greylist authorization required for task %q from peer %s (action: %q). Operator OTP: %s", req.TaskID, s.remoteSAN, req.Objective, pending.Token)
+
+						_ = s.sendSuccessResponse(envelope.ID, &TaskDispatchResponse{
+							TaskID:       req.TaskID,
+							Accepted:     false,
+							Reason:       "action requires operator authorization",
+							InitialState: "pending_authorization",
+						})
+						continue
+
+					case auth.PolicyAllow:
+
+					}
 				}
 
 				var (

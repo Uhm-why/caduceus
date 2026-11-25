@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Uhm-why/caduceus/internal/auth"
 	"github.com/Uhm-why/caduceus/internal/config"
 	"github.com/Uhm-why/caduceus/internal/mailbox"
 )
@@ -346,6 +347,9 @@ func TestTaskDelegation_WireFlow(t *testing.T) {
 	defer cancel()
 	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
 
+	// Configure server session to allow tasks for the general wire flow test
+	serverSession.SetAuthManager(auth.NewAuthManager(auth.NewPolicy(auth.PolicyAllow, nil), 0))
+
 	serverSession.Attach(ctx, serverConn)
 	clientSession.Attach(ctx, clientConn)
 
@@ -452,5 +456,103 @@ func TestTaskDelegation_WireFlow(t *testing.T) {
 
 	if err == nil {
 		t.Fatalf("expected error when client requested status of non-existent task, got nil")
+	}
+}
+
+func TestTaskDelegation_PolicyDeny(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	// Configure server session with an explicit deny policy
+	denyPolicy := auth.NewPolicy(auth.PolicyDeny, nil)
+	serverSession.SetAuthManager(auth.NewAuthManager(denyPolicy, 0))
+
+	serverSession.Attach(ctx, serverConn)
+	clientSession.Attach(ctx, clientConn)
+	clientSession.PerformHandshake(ctx)
+
+	req := TaskDispatchRequest{
+		TaskID:     "tkt-deny-001",
+		Objective:  "dangerous.exec",
+		TimeoutSec: 30,
+	}
+
+	res, err := clientSession.DispatchTask(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+
+	if res.Accepted {
+		t.Errorf("expected task to be rejected by policy, but was accepted")
+	}
+	if res.Reason != "action denied by policy" {
+		t.Errorf("expected reason 'action denied by policy', got %q", res.Reason)
+	}
+}
+
+func TestTaskDelegation_PolicyGreylist(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientSession, serverSession, clientConn, serverConn := setupTestSessionPair(t)
+
+	// Default policy is PolicyGreylist
+	serverSession.Attach(ctx, serverConn)
+	clientSession.Attach(ctx, clientConn)
+	clientSession.PerformHandshake(ctx)
+
+	req := TaskDispatchRequest{
+		TaskID:     "tkt-grey-001",
+		Objective:  "semi-trusted.action",
+		TimeoutSec: 60,
+	}
+
+	res, err := clientSession.DispatchTask(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+
+	// Should be challenged, not immediately accepted
+	if res.Accepted {
+		t.Errorf("expected greylisted task to not be immediately accepted")
+	}
+	if res.InitialState != "pending_authorization" {
+		t.Errorf("expected initial state 'pending_authorization', got %q", res.InitialState)
+	}
+
+	// Verify an auth challenge was created in the auth manager
+	pendingAuth, ok := serverSession.AuthManager().Get("tkt-grey-001")
+	if !ok {
+		t.Fatalf("expected pending authorization to be registered in auth manager")
+	}
+	if pendingAuth.State != auth.AuthStatePending {
+		t.Errorf("expected state AuthStatePending, got %v", pendingAuth.State)
+	}
+
+	// Verify mailbox received the challenge notification
+	msgs, err := serverSession.DrainInbox()
+	if err != nil {
+		t.Fatalf("error draining mailbox: %v", err)
+	}
+	var challengeFound bool
+	for _, m := range msgs {
+		if m.Kind == "auth_challenge" && m.CorrelationID == "tkt-grey-001" {
+			challengeFound = true
+			break
+		}
+	}
+	if !challengeFound {
+		t.Errorf("expected auth_challenge message in mailbox, none found")
+	}
+
+	// Settle the challenge with the OTP token
+	err = serverSession.AuthManager().Verify("tkt-grey-001", pendingAuth.Token)
+	if err != nil {
+		t.Fatalf("failed to verify OTP token: %v", err)
+	}
+
+	settled, _ := serverSession.AuthManager().Get("tkt-grey-001")
+	if settled.State != auth.AuthStateApproved {
+		t.Errorf("expected AuthStateApproved after verify, got %v", settled.State)
 	}
 }
