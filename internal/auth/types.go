@@ -162,12 +162,17 @@ func ParseAuthState(s string) (AuthState, error) {
 	return state, nil
 }
 
+type policyFile struct {
+	DefaultAction PolicyAction `json:"default_action"`
+	Rules         []PolicyRule `json:"rules"`
+}
+
 // PolicyRule defines a glob pattern matched against operation names, the decided PolicyAction,
 // and an operator description explaining the rule's intent.
 type PolicyRule struct {
-	Pattern     string
-	Action      PolicyAction
-	Description string
+	Pattern     string       `json:"pattern"`
+	Action      PolicyAction `json:"action"`
+	Description string       `json:"description,omitempty"`
 }
 
 // PendingAuth holds information about a task authorization request currently awaiting settlement.
