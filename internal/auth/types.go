@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -61,6 +62,25 @@ func (p PolicyAction) String() string {
 	}
 
 	return policyActionName[PolicyUnknown]
+}
+
+func (p PolicyAction) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+func (p *PolicyAction) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	action, err := ParsePolicyAction(s)
+	if err != nil {
+		return err
+	}
+
+	*p = action
+	return nil
 }
 
 // AuthState represents the lifecycle status of an authorization request.
