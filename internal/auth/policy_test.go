@@ -3,6 +3,10 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -231,4 +235,120 @@ func TestPolicyConcurrency(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestLoadPolicy_Defaults(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Non-existent file should return NewDefaultPolicy
+	missingPath := filepath.Join(tmpDir, "missing.json")
+	p, err := LoadPolicy(missingPath)
+	if err != nil {
+		t.Fatalf("unexpected error for missing policy file: %v", err)
+	}
+	if p.DefaultAction != PolicyGreylist {
+		t.Errorf("expected default action PolicyGreylist, got %v", p.DefaultAction)
+	}
+	if len(p.Rules) != 0 {
+		t.Errorf("expected 0 rules, got %d", len(p.Rules))
+	}
+
+	// Empty file should return NewDefaultPolicy
+	emptyPath := filepath.Join(tmpDir, "empty.json")
+	if err := os.WriteFile(emptyPath, []byte("   \n  "), 0600); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
+	pEmpty, err := LoadPolicy(emptyPath)
+	if err != nil {
+		t.Fatalf("unexpected error for empty policy file: %v", err)
+	}
+	if pEmpty.DefaultAction != PolicyGreylist {
+		t.Errorf("expected default action PolicyGreylist, got %v", pEmpty.DefaultAction)
+	}
+}
+
+func TestSaveAndLoadPolicy_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	policyPath := filepath.Join(tmpDir, "policy.json")
+
+	// Nil policy save should fail
+	if err := SavePolicy(policyPath, nil); err == nil {
+		t.Errorf("expected error saving nil policy, got nil")
+	}
+
+	// Create and populate policy
+	p := NewPolicy(PolicyDeny, []PolicyRule{
+		{Pattern: "terminal.status", Action: PolicyAllow, Description: "allow status"},
+		{Pattern: "terminal.*", Action: PolicyGreylist, Description: "greylist shell"},
+	})
+
+	if err := SavePolicy(policyPath, p); err != nil {
+		t.Fatalf("unexpected error saving policy: %v", err)
+	}
+
+	// Verify file permissions on POSIX
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(policyPath)
+		if err != nil {
+			t.Fatalf("failed to stat saved policy: %v", err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("expected file mode 0600, got %o", info.Mode().Perm())
+		}
+	}
+
+	// Verify content on disk uses human-readable actions ("allow", "greylist", "deny")
+	data, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("failed to read saved policy: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `"allow"`) || !strings.Contains(content, `"greylist"`) {
+		t.Errorf("expected human-readable actions in JSON, got:\n%s", content)
+	}
+
+	// Load back
+	loaded, err := LoadPolicy(policyPath)
+	if err != nil {
+		t.Fatalf("unexpected error loading saved policy: %v", err)
+	}
+
+	if loaded.DefaultAction != PolicyDeny {
+		t.Errorf("expected DefaultAction PolicyDeny, got %v", loaded.DefaultAction)
+	}
+	if len(loaded.Rules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(loaded.Rules))
+	}
+	if loaded.Rules[0].Pattern != "terminal.status" || loaded.Rules[0].Action != PolicyAllow {
+		t.Errorf("rule 0 mismatch: %+v", loaded.Rules[0])
+	}
+	if loaded.Rules[1].Pattern != "terminal.*" || loaded.Rules[1].Action != PolicyGreylist {
+		t.Errorf("rule 1 mismatch: %+v", loaded.Rules[1])
+	}
+}
+
+func TestLoadPolicy_ValidationErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Malformed JSON
+	badJSONPath := filepath.Join(tmpDir, "bad.json")
+	_ = os.WriteFile(badJSONPath, []byte(`{invalid json`), 0600)
+	if _, err := LoadPolicy(badJSONPath); err == nil {
+		t.Errorf("expected error for malformed json, got nil")
+	}
+
+	// Malformed glob pattern in rule
+	badPatternPath := filepath.Join(tmpDir, "bad_pattern.json")
+	badPatternData := `{
+		"default_action": "deny",
+		"rules": [{"pattern": "terminal.[a-", "action": "allow"}]
+	}`
+	_ = os.WriteFile(badPatternPath, []byte(badPatternData), 0600)
+	_, err := LoadPolicy(badPatternPath)
+	if err == nil {
+		t.Fatalf("expected error for invalid glob pattern, got nil")
+	}
+	if !errors.Is(err, ErrInvalidPattern) {
+		t.Errorf("expected ErrInvalidPattern, got %v", err)
+	}
 }

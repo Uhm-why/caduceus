@@ -1,8 +1,13 @@
 package auth
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -81,4 +86,94 @@ func (p *Policy) RulesSnapshot() []PolicyRule {
 	_ = copy(rules, p.Rules)
 
 	return rules
+}
+
+func LoadPolicy(filePath string) (*Policy, error) {
+	policy, err := os.ReadFile(filePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return NewDefaultPolicy(), nil
+		}
+		return nil, fmt.Errorf("reading policy file: %w", err)
+	}
+
+	if len(strings.TrimSpace(string(policy))) == 0 {
+		return NewDefaultPolicy(), nil
+	}
+
+	pf := &policyFile{}
+
+	err = json.Unmarshal(policy, &pf)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling policyFile: %w", err)
+	}
+
+	if pf.DefaultAction == PolicyUnknown {
+		pf.DefaultAction = PolicyGreylist
+	}
+
+	for _, rule := range pf.Rules {
+		_, err = path.Match(rule.Pattern, "")
+		if err != nil {
+			return nil, fmt.Errorf("invalid policy rule pattern `%s`: %w", rule.Pattern, ErrInvalidPattern)
+		}
+	}
+
+	return NewPolicy(pf.DefaultAction, pf.Rules), nil
+
+}
+
+func SavePolicy(filePath string, p *Policy) error {
+	if p == nil {
+		return errors.New("policy is nil")
+	}
+
+	dir := filepath.Dir(filePath)
+
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	pf := policyFile{
+		DefaultAction: p.DefaultAction,
+		Rules:         p.Rules,
+	}
+
+	data, err := json.MarshalIndent(pf, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling policy file: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, "policy-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if runtime.GOOS != "windows" {
+		_ = os.Chmod(tmp.Name(), 0600)
+	}
+
+	if err := os.Rename(tmp.Name(), filePath); err != nil {
+		return err
+	}
+
+	return nil
 }
