@@ -43,6 +43,10 @@ func main() {
 		runTrust(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		runAuth(os.Args[2:])
+		return
+	}
 
 	cfg, err := config.ParseAndLoad(os.Args[1:])
 	if err != nil {
