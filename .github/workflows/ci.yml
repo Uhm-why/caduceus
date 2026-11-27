@@ -80,3 +80,13 @@ jobs:
 
       - name: Build Binary
         run: go build -v ./cmd/caduceus
+
+  container-build:
+    name: Container Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Build Container Image
+        run: docker build -t caduceus:ci .
