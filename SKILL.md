@@ -1,7 +1,7 @@
 ---
 name: caduceus
 description: Delegate tasks or consult peer agents over mTLS 1.3 MCP.
-version: 0.1.0
+version: 0.3.0
 author: Dustin Hacker (Uhm-why)
 license: Apache-2.0
 platforms: [linux, macos, windows]
@@ -123,3 +123,26 @@ Caduceus exposes 12 MCP tools categorized by capability:
 ### 4. Direct Messaging & Mailbox
 - `agent_peer_send`: Deposit a durable message into the peer's inbox spool.
 - `agent_peer_inbox`: Inspect and poll local inbox for queued messages and delegated work.
+
+## Multi-Node Trust Management
+
+Caduceus nodes mutually authenticate via mTLS 1.3 using a shared trust bundle. Use the `trust` subcommand to manage trusted CA certificates:
+- `caduceus trust list [-ca path] [-key path]`: Print subject CN, SHA-256 fingerprint, and local-root status for all trusted certificates.
+- `caduceus trust add [-ca path] <cert.pem>`: Validate and atomically append a peer's CA certificate to the local trust bundle.
+- `caduceus trust remove [-ca path] [-key path] <fingerprint>`: Atomically remove a trusted certificate by its SHA-256 fingerprint (refuses to remove the local node's own root CA).
+
+## Greylist Execution Security & Authorization
+
+Caduceus gates every inbound `agent/task/dispatch` request through a policy-based authorization engine before execution. Each request is evaluated against standing policy rules and resolves to one of three decisions:
+- **Allow**: Executes immediately.
+- **Greylist** *(default)*: Halts execution and registers a pending authorization. An out-of-band one-time password (OTP) is generated and surfaced only on the receiving node's local console/log (never written to the mailbox, to prevent token leakage to local file readers). After 3 incorrect verification attempts, the pending request is automatically denied.
+- **Deny**: Immediately rejected.
+
+Use the `auth` subcommand to manage standing policy rules and inspect pending challenges:
+- `caduceus auth rules [-policy path]`: Display the default action and all configured rules in priority order.
+- `caduceus auth allow [-policy path] <pattern> [description]`: Prepend an allow rule matching a glob pattern (e.g. `terminal.status`).
+- `caduceus auth deny [-policy path] <pattern> [description]`: Prepend a deny rule matching a glob pattern (e.g. `system.reboot`).
+- `caduceus auth remove [-policy path] <pattern>`: Remove a rule by its exact pattern.
+- `caduceus auth pending [-mailbox path]`: List active authorization challenges awaiting operator verification.
+
+Policy rules are persisted atomically to `policy.json` (default: `~/.config/caduceus/policy.json`) and are evaluated with "first-match wins" precedence; newly added rules are prepended so the most recent operator decision always takes priority over broader wildcard rules.

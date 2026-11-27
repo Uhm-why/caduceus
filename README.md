@@ -13,6 +13,8 @@ Once work has been delegated, the agent that requested the work be performed can
 - Cross-Platform Maildir Durability (tmp/, /new, /cur)
 - Native Context Compactor (ANSI stripper, RLE line collapsing, spillover windowing with TTL cleanup)
 - Zero-touch Node Initialization
+- Automated Multi-Node Trust Management (`caduceus trust`)
+- Greylist Execution Security & Policy Enforcement (`caduceus auth`)
 
 # Quick Start
 1. Build the static binary:
@@ -71,6 +73,38 @@ To revoke a peer's trust at any time without affecting your local root CA:
 
 Both nodes will now mutually authenticate over mTLS 1.3.
 
+# Authorization & Greylist Policy Management
+Caduceus implements a defense-in-depth authorization engine (`internal/auth`) to protect nodes against unauthorized task execution. Inbound tasks are evaluated against standing policy rules using a tri-state model:
+- **Allow**: Executes immediately without interruption.
+- **Greylist** *(Default)*: Halts execution, generates an out-of-band one-time verification token (OTP), notifies the operator, and holds the task pending authorization.
+- **Deny**: Rejects the task dispatch immediately.
+
+### Managing Policy Rules
+View current policy rules and default action:
+```bash
+./caduceus auth rules
+```
+
+Allow or deny specific action patterns (shell-style globbing):
+```bash
+# Explicitly allow read-only status checks
+./caduceus auth allow "terminal.status" "allow status queries"
+
+# Explicitly deny destructive commands
+./caduceus auth deny "system.reboot" "block reboot requests"
+```
+
+Rules use an override-prepend priority: newest operator rules always take immediate precedence over broader wildcards.
+
+Remove an existing rule:
+```bash
+./caduceus auth remove "terminal.status"
+```
+
+Inspect active authorization challenges waiting for human verification:
+```bash
+./caduceus auth pending
+```
+
 # Roadmap
-- Greylist Execution Security: Out-of-band one-time verification tokens for sensitive/elevated tool execution.
 - Stream Compression: Optional wire-level stream compression over mTLS framing.

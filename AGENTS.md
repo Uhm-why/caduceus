@@ -18,8 +18,10 @@ Before declaring any task or PR complete, all quality gates must pass locally:
 - All path operations must use `path/filepath` (not raw string concatenation or `/`) to preserve Windows backslash handling.
 
 ## Architecture & Subsystems
-- `cmd/caduceus/`: CLI entrypoint, flag parsing, and subcommand dispatch (`init`).
+- `cmd/caduceus/`: CLI entrypoint, flag parsing, and subcommand dispatch (`init`, `trust`, `auth`).
 - `internal/config/`: Configuration precedence (`Flags > config.json > Hardcoded Defaults`), invariant validation in `Validate()`, and zero-touch `caduceus init` bootstrap.
 - `internal/mailbox/`: Cross-platform Maildir spool (`tmp/`, `new/`, `cur/`) with atomic rename promotion and fsync durability.
 - `internal/compactor/`: Deterministic context reduction pipeline (ANSI stripping, run-length line deduping, head-tail spillover windowing, TTL age pruning, and idempotent deletion).
 - `internal/peer/`: Wire framing, bidirectional mTLS 1.3 state machine, capability handshake, consultative tools, task delegation lifecycle, and stdio MCP bridge.
+- `internal/trust/`: Multi-node CA trust bundle management (PEM loading, SHA-256 fingerprinting, deduplication, atomic add/remove).
+- `internal/auth/`: Thread-safe, policy-based authorization engine (allow/greylist/deny evaluation, glob rule matching, atomic `policy.json` persistence) and human-in-the-loop OTP authorization lifecycle (generation, constant-time verification, brute-force lockout, TTL expiration).
