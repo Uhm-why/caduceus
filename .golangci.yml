@@ -36,3 +36,18 @@ linters:
       - text: ".*Enqueue.*is not checked"
         linters:
           - errcheck
+      - text: ".*Flush.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*Chmod.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*fmt\\.Fprintf.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*fmt\\.Fprint.*is not checked"
+        linters:
+          - errcheck
+      - text: ".*fmt\\.Printf.*is not checked"
+        linters:
+          - errcheck
