@@ -76,6 +76,22 @@ func (p *Policy) AddRule(rule PolicyRule) error {
 	return nil
 }
 
+// RemoveRule removes the first rule matching the given pattern.
+// Returns true if a rule was removed, or false if not found.
+func (p *Policy) RemoveRule(pattern string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for i, rule := range p.Rules {
+		if rule.Pattern == pattern {
+			p.Rules = append(p.Rules[:i], p.Rules[i+1:]...)
+			return true
+		}
+	}
+
+	return false
+}
+
 // RulesSnapshot returns an independent, deep-copied slice of current policy rules,
 // safe for concurrent inspection or serialization without holding internal locks.
 func (p *Policy) RulesSnapshot() []PolicyRule {
