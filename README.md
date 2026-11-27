@@ -34,6 +34,26 @@ You can run `./caduceus -h` for other configuration options.
 The order of precedence for configuration is:
 `CLI Flags > config.json > Hardcoded Defaults (config.json is stored by default at ~/.config/caduceus/config.json with ~/.caduceus/config.json as a fallback)`
 
+# Running in a Container Sandbox
+Caduceus provides a multi-stage `Dockerfile` creating an unprivileged, minimal Alpine-based container sandbox (~15MB total) for running agent nodes in isolated environments:
+
+1. Build the container image:
+```bash
+docker build -t caduceus .
+```
+
+2. Bootstrap local node credentials in a persistent volume:
+```bash
+docker run --rm -v caduceus-data:/home/caduceus/.config/caduceus caduceus init
+```
+
+3. Run Caduceus as a listener:
+```bash
+docker run -d --name caduceus-node -p 8443:8443 -v caduceus-data:/home/caduceus/.config/caduceus caduceus -listen :8443
+```
+
+*(Note: `podman` can be substituted for `docker` directly with identical arguments).*
+
 # Built-in MCP Tools
 The following tools are provided by the MCP server:
 - Direct Messaging:
