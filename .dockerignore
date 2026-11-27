@@ -1,0 +1,22 @@
+# Git history and internal metadata
+.git
+.gitignore
+
+# CI and local editor configs
+.github
+.zed
+.vscode
+.idea
+
+# Locally compiled binaries and test artifacts
+caduceus
+*.exe
+*.test
+*.prof
+*.out
+
+# Temporary and spillover files
+*.tmp
+*.log
+spillover/
+mailbox/
