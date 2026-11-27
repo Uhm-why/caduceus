@@ -64,10 +64,14 @@ func (p PolicyAction) String() string {
 	return policyActionName[PolicyUnknown]
 }
 
+// MarshalJSON serializes a PolicyAction as its human-readable string representation
+// ("allow", "greylist", "deny") for use in policy.json.
 func (p PolicyAction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(p.String())
 }
 
+// UnmarshalJSON parses a JSON string into a PolicyAction using ParsePolicyAction, rejecting
+// unknown or invalid action names.
 func (p *PolicyAction) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -162,6 +166,8 @@ func ParseAuthState(s string) (AuthState, error) {
 	return state, nil
 }
 
+// policyFile is the on-disk JSON representation of a Policy, used by LoadPolicy and
+// SavePolicy to avoid serializing Policy's unexported sync.RWMutex directly.
 type policyFile struct {
 	DefaultAction PolicyAction `json:"default_action"`
 	Rules         []PolicyRule `json:"rules"`
@@ -177,11 +183,13 @@ type PolicyRule struct {
 
 // PendingAuth holds information about a task authorization request currently awaiting settlement.
 type PendingAuth struct {
-	TaskID         string
-	PeerSAN        string
-	Objective      string
-	Token          string
-	State          AuthState
+	TaskID    string
+	PeerSAN   string
+	Objective string
+	Token     string
+	State     AuthState
+	// FailedAttempts counts consecutive incorrect OTP verification attempts. After 3 failures,
+	// the authorization is automatically transitioned to AuthStateDenied (brute-force lockout).
 	FailedAttempts int
 	CreatedAt      time.Time
 	ExpiresAt      time.Time

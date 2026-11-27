@@ -104,6 +104,9 @@ func (p *Policy) RulesSnapshot() []PolicyRule {
 	return rules
 }
 
+// LoadPolicy reads and parses a Policy from the JSON file at filePath. If the file does not
+// exist or is empty, it returns NewDefaultPolicy() with a nil error so an unconfigured node
+// can boot safely. Returns ErrInvalidPattern if any rule's glob pattern is malformed.
 func LoadPolicy(filePath string) (*Policy, error) {
 	policy, err := os.ReadFile(filePath)
 	if err != nil {
@@ -139,6 +142,10 @@ func LoadPolicy(filePath string) (*Policy, error) {
 
 }
 
+// SavePolicy atomically persists p to the JSON file at filePath: it serializes a snapshot
+// under a read lock, writes to a temporary file in the same directory, fsyncs for durability,
+// restricts permissions to 0600 on POSIX systems, and renames over the destination. Returns
+// an error if p is nil.
 func SavePolicy(filePath string, p *Policy) error {
 	if p == nil {
 		return errors.New("policy is nil")

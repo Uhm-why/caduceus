@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 )
@@ -61,11 +61,11 @@ func (m *DefaultAuthManager) Evaluate(action string) PolicyAction {
 func (m *DefaultAuthManager) CreatePending(taskID string, peerSAN string, objective string, ttl time.Duration) (*PendingAuth, error) {
 
 	if taskID == "" {
-		return nil, fmt.Errorf("Task ID is required to create a pending auth.")
+		return nil, errors.New("task ID is required to create a pending auth")
 	}
 
 	if peerSAN == "" {
-		return nil, fmt.Errorf("Peer SAN is required to create a pending auth.")
+		return nil, errors.New("peer SAN is required to create a pending auth")
 	}
 
 	if ttl <= 0 {
