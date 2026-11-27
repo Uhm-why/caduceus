@@ -20,6 +20,8 @@ var (
 	defaultMailboxPath = filepath.Join(defaultAuthDir, "mailbox")
 )
 
+// runAuthRules dispatches the "auth rules" subcommand. It loads the policy configuration
+// and displays the default action and all configured rules in priority order.
 func runAuthRules(args []string) {
 	fs := flag.NewFlagSet("auth rules", flag.ExitOnError)
 	policyPath := fs.String("policy", defaultPolicyPath, "Path to policy.json")
@@ -40,21 +42,23 @@ func runAuthRules(args []string) {
 		return
 	}
 
-	writer := tabwriter.NewWriter(os.Stdout, 5, 4, 2, '\t', tabwriter.DiscardEmptyColumns)
+	writer := tabwriter.NewWriter(os.Stdout, 5, 4, 2, '	', tabwriter.DiscardEmptyColumns)
 
-	headerText := "PRIORITY\tPATTERN\tACTION\tDESCRIPTION\n"
+	headerText := "PRIORITY	PATTERN	ACTION	DESCRIPTION\n"
 
-	_, err = writer.Write([]byte(headerText))
+	_, _ = fmt.Fprint(writer, headerText)
 
 	priority := 1
 	for _, rule := range rules {
-		fmt.Fprintf(writer, "%d\t%s\t%s\t%s\n", priority, rule.Pattern, rule.Action, rule.Description)
+		fmt.Fprintf(writer, "%d	%s	%s	%s\n", priority, rule.Pattern, rule.Action, rule.Description)
 		priority++
 	}
 
 	_ = writer.Flush()
 }
 
+// runAuthAllow dispatches the "auth allow" subcommand. It loads the policy configuration,
+// validates the pattern, prepends an allow rule, and saves the updated policy to disk.
 func runAuthAllow(args []string) {
 	fs := flag.NewFlagSet("auth allow", flag.ExitOnError)
 	policyPath := fs.String("policy", defaultPolicyPath, "Path to policy.json")
@@ -98,6 +102,8 @@ func runAuthAllow(args []string) {
 
 }
 
+// runAuthDeny dispatches the "auth deny" subcommand. It loads the policy configuration,
+// validates the pattern, prepends a deny rule, and saves the updated policy to disk.
 func runAuthDeny(args []string) {
 	fs := flag.NewFlagSet("auth deny", flag.ExitOnError)
 	policyPath := fs.String("policy", defaultPolicyPath, "Path to policy.json")
@@ -140,6 +146,8 @@ func runAuthDeny(args []string) {
 	fmt.Printf("Policy rule added: %s -> %s\n", pattern, auth.PolicyDeny.String())
 }
 
+// runAuthRemove dispatches the "auth remove" subcommand. It removes a rule matching the
+// given pattern from the policy and saves the updated policy to disk.
 func runAuthRemove(args []string) {
 	fs := flag.NewFlagSet("auth remove", flag.ExitOnError)
 	policyPath := fs.String("policy", defaultPolicyPath, "Path to policy.json")
@@ -175,6 +183,8 @@ func runAuthRemove(args []string) {
 
 }
 
+// runAuthPending dispatches the "auth pending" subcommand. It scans the Maildir new/
+// spool for unhandled authorization challenge messages and displays them.
 func runAuthPending(args []string) {
 	fs := flag.NewFlagSet("auth pending", flag.ExitOnError)
 	mailboxPath := fs.String("mailbox", defaultMailboxPath, "Path to mailbox directory.")
@@ -227,6 +237,8 @@ func runAuthPending(args []string) {
 
 }
 
+// runAuth is the CLI router for authorization operations. It inspects the first positional
+// argument and dispatches to the corresponding auth subcommand handler.
 func runAuth(args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: caduceus auth <rules|allow|deny|remove|pending> [options]")

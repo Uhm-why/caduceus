@@ -18,7 +18,7 @@ import (
 )
 
 // main is the entry point for Caduceus. It parses CLI arguments to dispatch the
-// "init" and "trust" subcommands or load runtime configuration, initializes the
+// "init", "trust", and "auth" subcommands or load runtime configuration, initializes the
 // local Maildir mailbox and peer session, optionally starts the TLS listener, and
 // serves the stdio MCP bridge until terminated.
 func main() {
