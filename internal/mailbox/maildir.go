@@ -18,12 +18,13 @@ var _ Mailbox = (*Maildir)(nil)
 // Maildir implements Mailbox using a standard Maildir filesystem layout
 // (tmp/, new/, cur/) to provide crash-safe, atomic message persistence.
 type Maildir struct {
-	rootDir string
-	tmpDir  string
-	newDir  string
-	curDir  string
-	mu      sync.Mutex
-	counter atomic.Uint64
+	rootDir       string
+	tmpDir        string
+	newDir        string
+	curDir        string
+	quarantineDir string
+	mu            sync.Mutex
+	counter       atomic.Uint64
 }
 
 // New initializes a Maildir directory structure at path with tmp, new, and cur
@@ -41,6 +42,7 @@ func New(path string) (*Maildir, error) {
 	tmpDir := filepath.Join(absPath, "tmp")
 	newDir := filepath.Join(absPath, "new")
 	curDir := filepath.Join(absPath, "cur")
+	quarantineDir := filepath.Join(absPath, "quarantine")
 
 	err = os.MkdirAll(tmpDir, 0700)
 	if err != nil {
@@ -57,13 +59,19 @@ func New(path string) (*Maildir, error) {
 		return nil, err
 	}
 
+	err = os.MkdirAll(quarantineDir, 0700)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Maildir{
-		rootDir: absPath,
-		tmpDir:  tmpDir,
-		newDir:  newDir,
-		curDir:  curDir,
-		mu:      sync.Mutex{},
-		counter: atomic.Uint64{},
+		rootDir:       absPath,
+		tmpDir:        tmpDir,
+		newDir:        newDir,
+		curDir:        curDir,
+		quarantineDir: quarantineDir,
+		mu:            sync.Mutex{},
+		counter:       atomic.Uint64{},
 	}, nil
 }
 
@@ -130,7 +138,7 @@ func (md *Maildir) Drain() ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	entryList := []string{}
+	entryList := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
@@ -139,7 +147,7 @@ func (md *Maildir) Drain() ([]Message, error) {
 	}
 	slices.Sort(entryList)
 
-	messageList := []Message{}
+	messageList := make([]Message, 0, len(entryList))
 
 	for _, message := range entryList {
 		messagePath := filepath.Join(md.newDir, message)
@@ -148,15 +156,17 @@ func (md *Maildir) Drain() ([]Message, error) {
 			return nil, err
 		}
 
-		tmpMessage := &Message{}
+		var msg Message
 
-		err = json.Unmarshal(messageData, tmpMessage)
+		err = json.Unmarshal(messageData, &msg)
 		if err != nil {
-			log.Printf("error unmarshaling: %v", err)
+			quarantinePath := filepath.Join(md.quarantineDir, message)
+			os.Rename(messagePath, quarantinePath)
+			log.Printf("quarantined corrupt message %s: %v", message, err)
 			continue
 		}
 
-		messageList = append(messageList, *tmpMessage)
+		messageList = append(messageList, msg)
 		os.Remove(messagePath)
 	}
 
