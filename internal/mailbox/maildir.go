@@ -161,7 +161,10 @@ func (md *Maildir) Drain() ([]Message, error) {
 		err = json.Unmarshal(messageData, &msg)
 		if err != nil {
 			quarantinePath := filepath.Join(md.quarantineDir, message)
-			os.Rename(messagePath, quarantinePath)
+			err := os.Rename(messagePath, quarantinePath)
+			if err != nil {
+				log.Printf("error while moving file to quarantine: %v", err)
+			}
 			log.Printf("quarantined corrupt message %s: %v", message, err)
 			continue
 		}
