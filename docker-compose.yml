@@ -1,0 +1,37 @@
+services:
+  node-alpha:
+    build: .
+    container_name: caduceus-alpha
+    command: ["-listen", ":8443"]
+    stdin_open: true
+    tty: true
+    ports:
+      - "8443:8443"
+    volumes:
+      - alpha-data:/home/caduceus/.config/caduceus
+      - shared-exchange:/exchange
+    networks:
+      - caduceus-net
+
+  node-beta:
+    build: .
+    container_name: caduceus-beta
+    command: ["-ip", "node-alpha:8443"]
+    stdin_open: true
+    tty: true
+    depends_on:
+      - node-alpha
+    volumes:
+      - beta-data:/home/caduceus/.config/caduceus
+      - shared-exchange:/exchange
+    networks:
+      - caduceus-net
+
+volumes:
+  alpha-data:
+  beta-data:
+  shared-exchange:
+
+networks:
+  caduceus-net:
+    driver: bridge
