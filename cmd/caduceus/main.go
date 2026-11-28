@@ -96,8 +96,17 @@ func main() {
 		}()
 	}
 
-	if err := bridge.Serve(ctx); err != nil {
-		log.Printf("MCP Bridge error: %v", err)
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- bridge.Serve(ctx)
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-serveErr:
+		if err != nil {
+			log.Printf("MCP Bridge error: %v", err)
+		}
 	}
 	cancel()
 	_ = session.Close()
